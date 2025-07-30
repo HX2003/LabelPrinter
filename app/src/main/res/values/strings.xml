@@ -1,3 +1,21 @@
 <resources>
-    <string name="app_name">LabelPrinter</string>
+    <string name="app_name">Label Printer</string>
+
+    <string name="print_preview">Print Preview</string>
+
+    <string name="none">None</string>
+    <string name="warning">Warning</string>
+    <string name="unknown">Unknown</string>
+    <string name="no_printer_found">No printer found</string>
+
+    <string name="printer">Printer</string>
+    <string name="copies">Copies</string>
+    <string name="dither">Dither</string>
+    <string name="classic">Classic</string>
+    <string name="threshold">Threshold</string>
+    <string name="label_size">Label Size</string>
+
+    <string name="warning_no_printer_found">No printer found, check whether your printer is connected.</string>
+    <string name="warning_permission_not_granted">Permission denied, please grant the permission to access the printer.</string>
+    <string name="warning_printer_generic">Printer not ready, please try again.</string>
 </resources>

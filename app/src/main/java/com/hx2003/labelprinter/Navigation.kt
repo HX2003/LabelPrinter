@@ -2,12 +2,10 @@ package com.hx2003.labelprinter
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -16,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavBackStack
@@ -26,9 +23,12 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSavedStateNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.ui.rememberSceneSetupNavEntryDecorator
+import com.hx2003.labelprinter.screens.HomeScreen
+import com.hx2003.labelprinter.screens.PreviewScreen
 import com.hx2003.labelprinter.ui.theme.AnimationDuration
 
 import kotlinx.serialization.Serializable
+import org.koin.androidx.compose.koinViewModel
 
 sealed class Screen: NavKey {
     @Serializable
@@ -41,6 +41,13 @@ sealed class Screen: NavKey {
 @Composable
 fun Navigation(modifier: Modifier = Modifier) {
     var useSpecialPrintAnimation by remember { mutableStateOf(false) }
+
+    // We create printerViewModel: PrinterViewModel = koinViewModel() here
+    // Since we want to scope printerViewModel to this composable instead of
+    // declaring it inside HomeScreen or PreviewScreen.
+    // We don't want to have 2 instances of printerViewModel for each screen,
+    // since some states must be shared between them
+    val printerApplicationViewModel: PrinterApplicationViewModel = koinViewModel()
 
     val backStack = rememberNavBackStack(Screen.Home)
     NavDisplay(
@@ -56,9 +63,10 @@ fun Navigation(modifier: Modifier = Modifier) {
                 is Screen.Home -> {
                     NavEntry(key) {
                         HomeScreen(
-                            onDoneClick = {
+                            onDone = {
                                 addUntil(backStack, Screen.Preview)
-                            }
+                            },
+                            printerApplicationViewModel = printerApplicationViewModel
                         )
                     }
                 }
@@ -77,14 +85,15 @@ fun Navigation(modifier: Modifier = Modifier) {
                         }
                     }) {
                         PreviewScreen(
-                            onBackClick = {
+                            onBack = {
                                 useSpecialPrintAnimation = false
                                 removeUntil(backStack, Screen.Home)
                             },
-                            onPrintClick = {
+                            onDone = {
                                 useSpecialPrintAnimation = true
                                 removeUntil(backStack, Screen.Home)
-                            }
+                            },
+                            printerApplicationViewModel = printerApplicationViewModel
                         )
                     }
                 }
@@ -92,7 +101,22 @@ fun Navigation(modifier: Modifier = Modifier) {
                     error("Invalid navKey: $key")
                 }
             }
-        }
+        },
+        transitionSpec = {
+            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
+                animationSpec = tween(AnimationDuration)
+            )
+        },
+        popTransitionSpec = {
+            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
+                animationSpec = tween(AnimationDuration)
+            )
+        },
+        predictivePopTransitionSpec = {
+            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
+                animationSpec = tween(AnimationDuration)
+            )
+        },
     )
 }
 
