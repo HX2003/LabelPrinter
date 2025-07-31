@@ -43,8 +43,8 @@ data class PrintReactiveState (
     var numCopies: Int = 1
 )
 
-class PrinterApplicationViewModel(
-    private val printerUsbController: PrinterUsbController
+class MainActivityViewModel(
+    private val printerDevicesManager: PrinterDevicesManager
 ) : ViewModel() {
     private val _cropViewState = MutableStateFlow(CropViewState())
     val cropViewState = _cropViewState.asStateFlow()
@@ -55,7 +55,7 @@ class PrinterApplicationViewModel(
     private val _bitmapState = MutableStateFlow(BitmapState())
     val bitmapState = _bitmapState.asStateFlow()
 
-    val printerUsbState = printerUsbController.printerUsbState
+    val printerUsbState = printerDevicesManager.printerUsbState
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val transformedBitmapState: StateFlow<BitmapState?> = bitmapState
@@ -71,7 +71,6 @@ class PrinterApplicationViewModel(
             started = SharingStarted.WhileSubscribed(),
             initialValue = null
         )
-
 
     fun setCropViewUri(uri: Uri?) {
         _cropViewState.update {
@@ -109,15 +108,15 @@ class PrinterApplicationViewModel(
     }
 
     fun setSelectedPrinter(newSelectedPrinter: String) {
-        printerUsbController.setSelectedPrinter(newSelectedPrinter)
+        printerDevicesManager.setSelectedPrinter(newSelectedPrinter)
     }
 
     suspend fun print(): PrintError {
-        return printerUsbController.print()
+        return printerDevicesManager.print()
     }
 
-    suspend fun requestPermission(): PrintError {
-        return printerUsbController.requestPermission()
+    suspend fun requestPermissionAndConnect(): PrintError {
+        return printerDevicesManager.requestPermissionAndConnect()
     }
 
     /*var str: Int

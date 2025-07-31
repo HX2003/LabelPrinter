@@ -10,6 +10,6 @@ import org.koin.core.module.dsl.viewModelOf
 // 'factory': A new instance each time we ask for this definition
 // 'viewModel': Specifically for Android's ViewModel instance
 val PrinterApplicationModules = module {
-    single { PrinterUsbController(context = get())}
-    viewModelOf(::PrinterApplicationViewModel)
+    single { PrinterDevicesManager(context = get())}
+    viewModelOf(::MainActivityViewModel)
 }

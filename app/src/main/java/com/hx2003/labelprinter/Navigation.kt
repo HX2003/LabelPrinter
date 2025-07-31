@@ -42,12 +42,16 @@ sealed class Screen: NavKey {
 fun Navigation(modifier: Modifier = Modifier) {
     var useSpecialPrintAnimation by remember { mutableStateOf(false) }
 
-    // We create printerViewModel: PrinterViewModel = koinViewModel() here
-    // Since we want to scope printerViewModel to this composable instead of
-    // declaring it inside HomeScreen or PreviewScreen.
-    // We don't want to have 2 instances of printerViewModel for each screen,
-    // since some states must be shared between them
-    val printerApplicationViewModel: PrinterApplicationViewModel = koinViewModel()
+    // We create printerViewModel: PrinterViewModel = koinViewModel() here,
+    // we only want 1 instance since some states must be shared between the screens
+    // In this case, printerViewModel is scoped to the closest ViewModelStoreOwner, which is the MainActivity.
+    // This means the ViewModel will survive configuration changes (like screen rotations),
+    // because MainActivity's ViewModelStore is retained across activity recreation.
+    //
+    // We avoid declaring it inside HomeScreen or PreviewScreen which will scope it to the NavBackStackEntry
+    // and also result in separate instances of printerViewModel for each screen. Moreover, if we pop of the NavEntry,
+    // the state will be lost
+    val mainActivityViewModel: MainActivityViewModel = koinViewModel()
 
     val backStack = rememberNavBackStack(Screen.Home)
     NavDisplay(
@@ -66,7 +70,7 @@ fun Navigation(modifier: Modifier = Modifier) {
                             onDone = {
                                 addUntil(backStack, Screen.Preview)
                             },
-                            printerApplicationViewModel = printerApplicationViewModel
+                            mainActivityViewModel = mainActivityViewModel
                         )
                     }
                 }
@@ -93,7 +97,7 @@ fun Navigation(modifier: Modifier = Modifier) {
                                 useSpecialPrintAnimation = true
                                 removeUntil(backStack, Screen.Home)
                             },
-                            printerApplicationViewModel = printerApplicationViewModel
+                            mainActivityViewModel = mainActivityViewModel
                         )
                     }
                 }

@@ -5,15 +5,25 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.registerReceiver
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import kotlin.collections.mapOf
 
@@ -31,8 +41,8 @@ data class PrinterUsbState (
     var printerReady: Boolean = false
 )
 
-class PrinterUsbController {
-    private val tag = "PrinterUSBController"
+class PrinterDevicesManager {
+    private val tag = "PrinterDevicesManager"
     private val _printerUsbState = MutableStateFlow(PrinterUsbState())
     val printerUsbState = _printerUsbState.asStateFlow()
 
@@ -48,6 +58,9 @@ class PrinterUsbController {
 
     private val ACTION_USB_PERMISSION = "com.android.example.USB_PERMISSION"
     private var requestPermissionDeferrable: CompletableDeferred<Boolean>? = null
+
+    private var printerDeviceConnectionMutex = Mutex()
+    private var printerDeviceConnection: PrinterDeviceConnection? = null
 
     constructor(context: Context) {
         this.context = context
@@ -80,6 +93,16 @@ class PrinterUsbController {
         )
 
         updateDevices()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                printerDeviceConnectionMutex.withLock {
+                    Log.i("heatrbest", "heratbest")
+                    queryStatus()
+                }
+                delay(333)
+            }
+        }
     }
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -105,9 +128,6 @@ class PrinterUsbController {
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                         Log.d(tag, "permission granted for usb device $device")
                         requestPermissionDeferrable?.complete(true)
-                        device?.apply {
-                            // call method to set up device communication
-                        }
                     } else {
                         Log.d(tag, "permission denied for usb device $device")
                         requestPermissionDeferrable?.complete(false)
@@ -158,7 +178,7 @@ class PrinterUsbController {
             )
         }
 
-        Log.d("PrinterUSBController", "usb device list ${printerUsbState.value.availablePrinters}")
+        Log.d(tag, "usb device list ${printerUsbState.value.availablePrinters}")
     }
 
     fun setSelectedPrinter(newSelectedPrinter: String) {
@@ -175,22 +195,39 @@ class PrinterUsbController {
     }
 
     suspend fun print(): PrintError {
-        val res: PrintError = requestPermission()
+        val res: PrintError = requestPermissionAndConnect()
 
         if(res != PrintError.NONE) return res
+
+        val printerUsbStateValue = _printerUsbState.value
+
+        val usbDevice = try {
+            printerUsbStateValue.availablePrinters.getValue(printerUsbStateValue.selectedPrinter!!)
+        } catch (e: NoSuchElementException) {
+            return PrintError.NO_PRINTER_FOUND
+        }
+
+       /* withContext(Dispatchers.IO) {
+            try {
+
+            } catch (e: Exception) {
+                return@withContext PrintError.GENERIC_ERROR
+            }
+        }*/
 
         return PrintError.NONE
     }
 
     /**
-     * Request permission for the selected printer
+     * Request permission for the selected printer,
+     * if permission is granted, connect to the printer and get its status
      *
      * @return [PrintError] indicating the result of the request. This is a subset of possible [PrintError] values:
      *  * - [PrintError.NONE]: Permission granted successfully
      *  * - [PrintError.NO_PRINTER_FOUND]: No available printer found
      *  * - [PrintError.PERMISSION_NOT_GRANTED]: The user denied the permission request
      **/
-    suspend fun requestPermission(): PrintError {
+    suspend fun requestPermissionAndConnect(): PrintError {
         val printerUsbStateValue = _printerUsbState.value
 
         if(printerUsbStateValue.selectedPrinter == null) {
@@ -217,10 +254,29 @@ class PrinterUsbController {
         usbManager.requestPermission(usbDevice, pendingIntent)
 
         // Wait for the requestPermissionDeferrable flag to be set
-        if (requestPermissionDeferrable!!.await()) {
-            return PrintError.NONE
-        } else {
-            return PrintError.PERMISSION_NOT_GRANTED
+        if (!requestPermissionDeferrable!!.await()) return PrintError.PERMISSION_NOT_GRANTED
+
+        // Gracefully close the previous connection
+        printerDeviceConnection?.close()
+
+        try {
+            // Create a new connection
+            printerDeviceConnection = PrinterDeviceConnection(usbManager, usbDevice)
+
+            queryStatus()
+        } catch (e: Exception) {
+            return PrintError.GENERIC_ERROR
+        }
+
+        return PrintError.NONE
+    }
+
+    private suspend fun queryStatus() {
+        printerDeviceConnectionMutex.withLock {
+            if(printerDeviceConnection != null) {
+                // Get status
+                //printerDeviceConnection.queryStatus()
+            }
         }
     }
 }

@@ -10,14 +10,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
@@ -29,11 +27,11 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +44,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -62,7 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
@@ -75,7 +71,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hx2003.labelprinter.DitherOption
 import com.hx2003.labelprinter.PrintError
-import com.hx2003.labelprinter.PrinterApplicationViewModel
+import com.hx2003.labelprinter.MainActivityViewModel
 import com.hx2003.labelprinter.R
 import kotlinx.coroutines.launch
 import java.util.SortedMap
@@ -86,15 +82,15 @@ import kotlin.math.ceil
 fun PreviewScreen(
     onDone: () -> Unit = {},
     onBack: () -> Unit = {},
-    printerApplicationViewModel: PrinterApplicationViewModel
+    mainActivityViewModel: MainActivityViewModel
 ) {
     val warningDialogOpened = remember { mutableStateOf(false) }
     val warningDialogText = remember { mutableStateOf("") }
 
-    val printReactiveState by printerApplicationViewModel.printConfigReactiveState.collectAsStateWithLifecycle()
-    val bitmapState by printerApplicationViewModel.bitmapState.collectAsStateWithLifecycle()
-    val transformedBitmapState by printerApplicationViewModel.transformedBitmapState.collectAsStateWithLifecycle()
-    val printerUsbState by printerApplicationViewModel.printerUsbState.collectAsStateWithLifecycle()
+    val printReactiveState by mainActivityViewModel.printConfigReactiveState.collectAsStateWithLifecycle()
+    val bitmapState by mainActivityViewModel.bitmapState.collectAsStateWithLifecycle()
+    val transformedBitmapState by mainActivityViewModel.transformedBitmapState.collectAsStateWithLifecycle()
+    val printerUsbState by mainActivityViewModel.printerUsbState.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope() // Obtain a coroutineScope tied to the composable's lifecycle
 
@@ -168,8 +164,8 @@ fun PreviewScreen(
                         }.toSortedMap(),
                         onOptionSelected = { selected ->
                             coroutineScope.launch {
-                                printerApplicationViewModel.setSelectedPrinter(selected)
-                                printerApplicationViewModel.requestPermission()
+                                mainActivityViewModel.setSelectedPrinter(selected)
+                                mainActivityViewModel.requestPermissionAndConnect()
                             }
                         },
                         noAvailableOptionsText = stringResource(R.string.no_printer_found),
@@ -179,7 +175,7 @@ fun PreviewScreen(
                         label = stringResource(R.string.copies),
                         value = printReactiveState.numCopies,
                         onValueChange = {
-                            printerApplicationViewModel.setNumCopies(it)
+                            mainActivityViewModel.setNumCopies(it)
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -191,7 +187,7 @@ fun PreviewScreen(
                             Pair(DitherOption.CLASSIC.toString(),stringResource(R.string.classic))
                         ),
                         onOptionSelected = {
-                            selected -> printerApplicationViewModel.setDither(DitherOption.valueOf(selected))
+                            selected -> mainActivityViewModel.setDither(DitherOption.valueOf(selected))
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -201,7 +197,7 @@ fun PreviewScreen(
                             label = stringResource(R.string.threshold),
                             value = bitmapState.colorThreshold,
                             onValueChange = {
-                                printerApplicationViewModel.setColorThreshold(it)
+                                mainActivityViewModel.setColorThreshold(it)
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -213,41 +209,57 @@ fun PreviewScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-            }
-            val stringWarningNoPrinterFound = stringResource(R.string.warning_no_printer_found)
-            val stringWarningPermissionNotGranted = stringResource(R.string.warning_permission_not_granted)
-            val stringWarningPrinterGeneric = stringResource(R.string.warning_printer_generic)
 
-            FloatingActionButton(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .alpha(if (printerUsbState.availablePrinters.isNotEmpty()) 1.0f else 0.3f),
-                onClick = {
-                    coroutineScope.launch {
-                        val res: PrintError = printerApplicationViewModel.print()
-                        when(res) {
-                            PrintError.NONE -> onDone()
-                            PrintError.NO_PRINTER_FOUND -> {
-                                warningDialogText.value = stringWarningNoPrinterFound
-                                warningDialogOpened.value = true
+                HorizontalDivider()
+
+                Column(
+                    modifier = Modifier.padding( 16.dp)
+                ) {
+                    val stringWarningNoPrinterFound =
+                        stringResource(R.string.warning_no_printer_found)
+                    val stringWarningPermissionNotGranted =
+                        stringResource(R.string.warning_permission_not_granted)
+                    val stringWarningPrinterGeneric =
+                        stringResource(R.string.warning_printer_generic)
+
+                    TextButton(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .alpha(if (printerUsbState.availablePrinters.isNotEmpty()) 1.0f else 0.3f),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        onClick = {
+                            coroutineScope.launch {
+                                val res: PrintError = mainActivityViewModel.print()
+                                when (res) {
+                                    PrintError.NONE -> onDone()
+                                    PrintError.NO_PRINTER_FOUND -> {
+                                        warningDialogText.value = stringWarningNoPrinterFound
+                                        warningDialogOpened.value = true
+                                    }
+
+                                    PrintError.PERMISSION_NOT_GRANTED -> {
+                                        warningDialogText.value = stringWarningPermissionNotGranted
+                                        warningDialogOpened.value = true
+                                    }
+
+                                    PrintError.GENERIC_ERROR -> {
+                                        warningDialogText.value = stringWarningPrinterGeneric
+                                        warningDialogOpened.value = true
+                                    }
+                                }
                             }
-                            PrintError.PERMISSION_NOT_GRANTED -> {
-                                warningDialogText.value = stringWarningPermissionNotGranted
-                                warningDialogOpened.value = true
-                            }
-                            PrintError.GENERIC_ERROR -> {
-                                warningDialogText.value = stringWarningPrinterGeneric
-                                warningDialogOpened.value = true
-                            }
-                        }
+                        },
+                    ) {
+                        Text(
+                            text = stringResource(R.string.print),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
-                },
-            ) {
-                Icon(
-                    painterResource(R.drawable.material_symbols_outlined_print),
-                    contentDescription = "Print"
-                )
+                }
             }
 
             WarningAlertDialog (
@@ -330,7 +342,7 @@ fun IntegerControl(
 ) {
     Row(
         modifier = modifier
-            .height(56.dp)
+            .height(48.dp)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -348,7 +360,7 @@ fun IntegerControl(
             // Decrease button
             IconButton(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .padding(0.dp)
                     .background(MaterialTheme.colorScheme.surface)
@@ -376,7 +388,7 @@ fun IntegerControl(
             // Increase button
             IconButton(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .padding(0.dp)
                     .background(MaterialTheme.colorScheme.surface)
@@ -411,7 +423,7 @@ fun OptionControl(
 
     Row(
         modifier = modifier
-            .height(56.dp)
+            .height(48.dp)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .clickable(
@@ -522,7 +534,7 @@ fun SliderControl(
 ) {
     Row(
         modifier = modifier
-            .height(56.dp)
+            .height(48.dp)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -547,7 +559,7 @@ fun SliderControl(
 
                 SliderDefaults.Thumb(
                     modifier = Modifier
-                        .size(width = 20.dp, height = 24.dp),
+                        .size(width = 20.dp, height = 20.dp),
                     interactionSource = interactionSource
                 )
             },
@@ -574,7 +586,7 @@ fun Info(
 ) {
     Row(
         modifier = modifier
-            .height(56.dp)
+            .height(48.dp)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .padding(horizontal = 16.dp, vertical = 8.dp),

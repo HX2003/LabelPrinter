@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.canhub.cropper.CropImageView
-import com.hx2003.labelprinter.PrinterApplicationViewModel
+import com.hx2003.labelprinter.MainActivityViewModel
 import com.hx2003.labelprinter.R
 import com.hx2003.labelprinter.utils.createImagePickerIntent
 import com.hx2003.labelprinter.utils.getTempImageUri
@@ -52,9 +52,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     onDone: () -> Unit = {},
-    printerApplicationViewModel: PrinterApplicationViewModel
+    mainActivityViewModel: MainActivityViewModel
 ) {
-    val cropViewState by printerApplicationViewModel.cropViewState.collectAsStateWithLifecycle()
+    val cropViewState by mainActivityViewModel.cropViewState.collectAsStateWithLifecycle()
 
     val cropImageViewRef = remember { mutableStateOf<CropImageView?>(null) }
 
@@ -68,13 +68,13 @@ fun HomeScreen(
             if (intent != null && intent.data != null) {
                 // The activity returned some data
                 val uri = intent.data
-                printerApplicationViewModel.setCropViewUri(uri)
+                mainActivityViewModel.setCropViewUri(uri)
             } else {
                 // The activity did not return any uri data,
                 // this is the intended behaviour when using the camera
                 // but we know that the image should be stored in the previously supplied temp uri
                 val uri = getTempImageUri(context)
-                printerApplicationViewModel.setCropViewUri(uri)
+                mainActivityViewModel.setCropViewUri(uri)
             }
         }
     }
@@ -136,7 +136,7 @@ fun HomeScreen(
                 uri = cropViewState.uri,
                 cropImageViewRef = cropImageViewRef,
                 onSetImageUriCompleteListener = {
-                    printerApplicationViewModel.setUriLoadedFlag()
+                    mainActivityViewModel.setUriLoadedFlag()
                 }
             )
             Row(
@@ -162,13 +162,13 @@ fun HomeScreen(
                     FloatingActionButton(
                         onClick = {
                             coroutineScope.launch {
-                                printerApplicationViewModel.setCroppedBitmap(cropImageViewRef.value?.getCroppedImage())
-                                printerApplicationViewModel.setNumCopies(1)
+                                mainActivityViewModel.setCroppedBitmap(cropImageViewRef.value?.getCroppedImage())
+                                mainActivityViewModel.setNumCopies(1)
                                 // We need to request permission for the printer, in order to get the label size
                                 // Although the user has not yet selected which label printer is desired,
                                 // in most cases it is unlikely that the users have multiple label printers
                                 // Even so, the user can reject the request and get the permission later
-                                printerApplicationViewModel.requestPermission()
+                                mainActivityViewModel.requestPermissionAndConnect()
                                 onDone()
                             }
                         }

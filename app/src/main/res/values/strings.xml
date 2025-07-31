@@ -8,6 +8,7 @@
     <string name="unknown">Unknown</string>
     <string name="no_printer_found">No printer found</string>
 
+    <string name="print">Print</string>
     <string name="printer">Printer</string>
     <string name="copies">Copies</string>
     <string name="dither">Dither</string>
