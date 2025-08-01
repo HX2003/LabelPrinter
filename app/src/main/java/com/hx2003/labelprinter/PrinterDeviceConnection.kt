@@ -6,13 +6,12 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
+import android.hardware.usb.UsbRequest
 import android.util.Log
 import androidx.core.graphics.get
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
-import kotlin.time.Duration
+import java.nio.ByteBuffer
 import kotlin.time.DurationUnit
 import kotlin.time.TimeSource.Monotonic.markNow
 import kotlin.time.toDuration
@@ -93,11 +92,16 @@ class PrinterDeviceConnection (
     private var usbEndpointIn: UsbEndpoint? = null
     private var usbEndpointOut: UsbEndpoint? = null
 
-    private val writeTimeout = 500
-    private val extendedWriteTimeout = 500
-    private val readTimeout = 500
-    private val printTimeout = 7500 // @TODO For very very long labels, this may be insufficient
+    private lateinit var usbWriteRequest: UsbRequest
 
+    private lateinit var usbReadRequest: UsbRequest
+
+    private val writeTimeout = 500
+    private val readTimeout = 500
+
+    // @TODO For very very long labels, this may be insufficient
+    private val printTimeout = 7500
+    private val printLastTimeout = 15000 // give extra time for the last label, since it needs to cut extra
     private val tag = "PrinterDeviceConnection"
 
     private var open = false
@@ -144,6 +148,19 @@ class PrinterDeviceConnection (
             if (!usbDeviceConnection!!.claimInterface(usbInterface, true)) {
                 error("failed to claim usb device, usbDeviceConnection is null")
             }
+
+            usbReadRequest = UsbRequest()
+
+            if(!usbReadRequest.initialize(usbDeviceConnection, usbEndpointIn)) {
+                error("failed to initialize usbReadRequest")
+            }
+
+            usbWriteRequest = UsbRequest()
+
+            if(!usbWriteRequest.initialize(usbDeviceConnection, usbEndpointOut)) {
+                error("failed to initialize usbWriteRequest")
+            }
+
         } catch (e: Exception) {
             Log.w(tag, "open() error: $e")
             return OpenCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
@@ -164,7 +181,7 @@ class PrinterDeviceConnection (
      **/
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    suspend fun query(request: Boolean = true): QueryCommandResult {
+    fun query(request: Boolean = true): QueryCommandResult {
         if (!open) {
             Log.w(tag, "either you forgot to call open(), or open() was previously not successful")
             return QueryCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
@@ -172,13 +189,19 @@ class PrinterDeviceConnection (
 
         val buffer = ByteArray(32)
 
-        try {
-            if (request) {
+        if (request) {
+            try {
                 bulkWrite(ubyteArrayOf(0x1Bu, 0x69u, 0x53u).asByteArray())
+            } catch (e: Exception) {
+                Log.w(tag, "query bulk write error, exception: $e")
+                return QueryCommandResult.CommunicationError(PrinterCommunicationError.TRANSFER_ERROR)
             }
+        }
+
+        try {
             bulkRead(buffer)
         } catch (e: Exception) {
-            Log.w(tag, "query bulk write/ bulk read error, exception: $e")
+            Log.w(tag, "query bulk read error, exception: $e")
             return QueryCommandResult.CommunicationError(PrinterCommunicationError.TRANSFER_ERROR)
         }
 
@@ -299,7 +322,7 @@ class PrinterDeviceConnection (
             val lastPage = (i == (config.numCopies - 1))
 
             try {
-                //setNotifyMode(notify = true)
+                setNotifyMode(notify = true)
                 setRasterMode()
                 setPrintInformation(
                     validFlags = 0x84u,
@@ -323,9 +346,13 @@ class PrinterDeviceConnection (
             // the printer will notify us when the printer status changes
             //
             // we will keep polling to check whether there are any status messages until the timeout
-            val printTimeoutDuration = printTimeout.toDuration(DurationUnit.MILLISECONDS)
+            val printTimeoutDuration = when (lastPage) {
+                false -> printTimeout.toDuration(DurationUnit.MILLISECONDS)
+                true -> printLastTimeout.toDuration(DurationUnit.MILLISECONDS)
+            }
             val mark = markNow()
             var printCompleted = false
+            Log.i(tag, "polling for status, query bulk read errors are expected")
             while(!printCompleted && (mark.elapsedNow() < printTimeoutDuration)) {
                 delay(250)
 
@@ -334,7 +361,8 @@ class PrinterDeviceConnection (
                 when (queryResult) {
                     is QueryCommandResult.CommunicationError -> {
                         // do nothing, it probably timed out, which is normal
-                        // we will try again
+                        // warnings will appear in the log
+                        // we will try again later
                     }
 
                     is QueryCommandResult.DeviceError -> {
@@ -364,12 +392,12 @@ class PrinterDeviceConnection (
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun clearBuffers() {
+    private fun clearBuffers() {
         bulkWrite(ubyteArrayOf(0x1Bu, 0x40u).asByteArray()) // initialize and clear buffers
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setNotifyMode(notify: Boolean) {
+    private fun setNotifyMode(notify: Boolean) {
         bulkWrite(ubyteArrayOf(
             0x1Bu,
             0x69u,
@@ -378,7 +406,7 @@ class PrinterDeviceConnection (
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setEachMode(autocut: Boolean, mirrorPrinting: Boolean) {
+    private fun setEachMode(autocut: Boolean, mirrorPrinting: Boolean) {
         val bytes = ubyteArrayOf(0x1Bu, 0x69u, 0x4Du).asByteArray()
 
         val autocutBit = if (autocut) 1 else 0
@@ -389,7 +417,7 @@ class PrinterDeviceConnection (
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setMargin(dots: UInt) {
+    private fun setMargin(dots: UInt) {
         val bytes = ubyteArrayOf(
             0x1Bu,
             0x69u,
@@ -402,13 +430,13 @@ class PrinterDeviceConnection (
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setCompressionMode() {
+    private fun setCompressionMode() {
         val bytes = ubyteArrayOf(0x4Du, 0x00u).asByteArray()
         bulkWrite(bytes)
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setRasterMode() {
+    private fun setRasterMode() {
         val bytes = ubyteArrayOf(0x1Bu, 0x69u, 0x61u, 0x01u).asByteArray()
 
         // differences between datasheets?
@@ -418,7 +446,7 @@ class PrinterDeviceConnection (
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun sendRasterGraphics(bitmap: Bitmap, lastPage: Boolean) {
+    private fun sendRasterGraphics(bitmap: Bitmap, lastPage: Boolean) {
         // Our printer head has 128 dots per raster line (vertical line)
         val pixelsPerRasterLine = 128
 
@@ -459,11 +487,11 @@ class PrinterDeviceConnection (
             stream.write(0x0c)
         }
 
-        bulkWrite(stream.toByteArray(), timeout = extendedWriteTimeout)
+        bulkWrite(stream.toByteArray())
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    private suspend fun setPrintInformation(validFlags: UByte, labelType: UByte, labelSize: UByte, labelLength: UByte, numRasterLines: UInt, firstPage: Boolean) {
+    private fun setPrintInformation(validFlags: UByte, labelType: UByte, labelSize: UByte, labelLength: UByte, numRasterLines: UInt, firstPage: Boolean) {
         val bytes = ubyteArrayOf(
             0x1Bu,
             0x69u,
@@ -483,30 +511,69 @@ class PrinterDeviceConnection (
         bulkWrite(bytes)
     }
     fun close() {
-        usbDeviceConnection?.close()
+        try {
+            usbDeviceConnection?.close()
+        } catch (e: Exception) {
+            Log.w(tag, "error closing exception: $e")
+        }
+
+        try {
+            usbReadRequest.close()
+        } catch (e: Exception) {
+            Log.w(tag, "error closing exception: $e")
+        }
+
+        try {
+            usbWriteRequest.close()
+        } catch (e: Exception) {
+            Log.w(tag, "error closing exception: $e")
+        }
     }
 
     private fun bulkRead(data: ByteArray, timeout: Int = readTimeout): Int {
-        val readLen = usbDeviceConnection!!.bulkTransfer(usbEndpointIn, data, data.size, timeout)
-        if (readLen <= 0) {
-            error("bulkRead failed")
+        val buffer = ByteBuffer.wrap(data)
+        if(!usbReadRequest.queue(buffer)) {
+            error("failed to queue usb read")
         }
-        return readLen
+
+        usbDeviceConnection!!.requestWait(timeout.toLong())
+
+        if(buffer.position() != data.size) {
+            error("usb read presumably failed as buffer position was not incremented. buffer.position() is ${buffer.position()}, expected ${data.size}")
+        }
+
+        //val readLen = usbDeviceConnection!!.bulkTransfer(usbEndpointIn, data, data.size, timeout)
+        //if (readLen <= 0) {
+        //    error("bulkRead failed")
+        //}
+
+        return buffer.position()
     }
 
     // With support for >16384 byte arrays
-    private suspend fun bulkWrite(data: ByteArray, timeout: Int = writeTimeout): Int {
-        delay(10)
+    private fun bulkWrite(data: ByteArray, timeout: Int = writeTimeout): Int {
         var offset = 0
         while (offset < data.size) {
             val remaining = data.size - offset
             val writeSize = minOf(16384, remaining)
-            val writeLen = usbDeviceConnection!!.bulkTransfer(usbEndpointOut, data, offset,writeSize, writeTimeout)
-            if (writeLen <= 0) {
-                error("bulkWrite of ${data.size} bytes failed:")
+            val buffer = ByteBuffer.wrap(data.copyOfRange(offset, offset + writeSize))
+
+            if(!usbWriteRequest.queue(buffer)) {
+                error("failed to queue usb write")
             }
-            offset += writeLen
+
+            usbDeviceConnection!!.requestWait(timeout.toLong())
+
+            if(buffer.position() != writeSize) {
+                error("usb write presumably failed as buffer position was not incremented. buffer.position() is ${buffer.position()}, expected $writeSize")
+            }
+            //val writeLen = usbDeviceConnection!!.bulkTransfer(usbEndpointOut, data, offset,writeSize, timeout)
+            //if (writeLen <= 0) {
+            //    error("bulkWrite of ${data.size} bytes failed:")
+            //}
+            offset += writeSize
         }
+
         return offset
     }
 }
