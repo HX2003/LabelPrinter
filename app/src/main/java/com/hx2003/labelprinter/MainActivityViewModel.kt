@@ -27,7 +27,7 @@ enum class DitherOption {
 
 data class PrintConfig (
     val numCopies: Int = 1,
-    var dither: DitherOption = DitherOption.CLASSIC,
+    var dither: DitherOption = DitherOption.NONE,
     var colorThreshold: Float = 0.5f,
     var bitmap: Bitmap? = null
 )

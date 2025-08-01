@@ -27,8 +27,7 @@ enum class PrinterCommunicationError {
     USB_SETUP_ERROR,  // Error setting up the usb connection
     TRANSFER_ERROR,   // USB bulkTransfer (read or write) error
     PARSING_ERROR,    // The received data has unexpected values
-    GENERIC_ERROR     // Any other errors
-    // NONE,          // No error occurred, communication was successful
+    TIMEOUT_ERROR     // Timeout waiting for status after printing
 }
 
 /**
@@ -96,7 +95,7 @@ class PrinterDeviceConnection (
 
     private lateinit var usbReadRequest: UsbRequest
 
-    private val writeTimeout = 500
+    private val writeTimeout = 1250 // @TODO For very very long labels, this may be insufficient
     private val readTimeout = 500
 
     // @TODO For very very long labels, this may be insufficient
@@ -278,11 +277,16 @@ class PrinterDeviceConnection (
         )
     }
 
-    suspend fun print(config: PrintConfigTransformed): PrintCommandResult {
+    suspend fun print(
+        config: PrintConfigTransformed,
+        progressCallback: (completedCount: Int, totalCount: Int) -> Unit
+    ): PrintCommandResult {
         if (!open) {
             Log.w(tag, "either you forgot to call open(), or open() was previously not successful")
             return PrintCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
         }
+
+        progressCallback(0, config.numCopies)
 
         // query the printer once again for its latest status,
         // to make sure nothing changed
@@ -372,19 +376,17 @@ class PrinterDeviceConnection (
                     }
 
                     is QueryCommandResult.Success -> {
-                        Log.i("queryResult", queryResult.data.toString())
-                        Log.i("queryResult status", queryResult.data.status.toString())
-                        Log.i("queryResult phase type", queryResult.data.phaseType.toString())
-                        if(queryResult.data.phaseType.toInt() == 0) {
+                         if(queryResult.data.phaseType.toInt() == 0) {
+                            progressCallback(i + 1, config.numCopies)
                             printCompleted = true
-                        }
+                         }
                     }
                 }
             }
 
             if (!printCompleted) {
                 Log.w(tag, "timeout waiting for printer status")
-                return PrintCommandResult.CommunicationError(PrinterCommunicationError.TRANSFER_ERROR)
+                return PrintCommandResult.CommunicationError(PrinterCommunicationError.TIMEOUT_ERROR)
             }
         }
 

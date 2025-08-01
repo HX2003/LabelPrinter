@@ -11,6 +11,7 @@
     <string name="dismiss">Dismiss</string>
     <string name="cancel">Cancel</string>
 
+    <string name="items">items</string>
     <string name="print">Print</string>
     <string name="printer">Printer</string>
     <string name="copies">Copies</string>
@@ -25,7 +26,7 @@
     <string name="usb_setup_error_description">An error occurred: USB_SETUP_ERROR</string>
     <string name="transfer_error_description">An error occurred: TRANSFER_ERROR</string>
     <string name="parsing_error_description">An error occurred: PARSING_ERROR</string>
-    <string name="generic_error_description">An error occurred: GENERIC_ERROR</string>
+    <string name="timeout_error_description">An error occurred: TIMEOUT_ERROR</string>
 
     <string name="config_null_error_description">An error occurred: CONFIG_NULL_ERROR</string>
     <string name="label_size_unknown_error_description">Label size is unknown, please try again.</string>

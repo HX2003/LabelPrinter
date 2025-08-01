@@ -27,16 +27,21 @@ sealed interface RequestPermissionAndConnectResult {
     data class Failure(val error: PrinterCommunicationError): RequestPermissionAndConnectResult
 }
 
-enum class PrintStatus {
+enum class PrintProgressState {
     NOT_STARTED, // print has not started
     IN_PROGRESS, // print is in progress (ui should show loading screen)
     COMPLETED    // print has completed (regardless success or not)
 }
 
+data class PrintProgress (
+    val state: PrintProgressState = PrintProgressState.NOT_STARTED,
+    val completedCount: Int = 0, // how many labels are successful printed
+    val totalCount: Int = 0      // total number of labels to be printed for this job
+)
 data class PrinterState (
     var availablePrinters: Map<String, UsbDevice> = mapOf(),
     var selectedPrinter: String? = null,
-    var printStatus: PrintStatus = PrintStatus.NOT_STARTED,
+    var printProgress: PrintProgress = PrintProgress(),
     val printResult: PrintCommandResult? = null, // only updated after the completion (regardless success or not) of a print
     val queryResult: QueryCommandResult? = null, // only updated after the completion (regardless success or not) of a query
 )
@@ -188,7 +193,7 @@ class PrinterDevicesManager {
     fun clearPrintStatusAndPrintRequestResult() {
         _printerState.update {
             it.copy(
-                printStatus = PrintStatus.NOT_STARTED,
+                printProgress = PrintProgress(),
                 printResult = null)
         }
     }
@@ -204,13 +209,28 @@ class PrinterDevicesManager {
      **/
     suspend fun print(config: PrintConfigTransformed?) {
         _printerState.update {
-            it.copy(printStatus = PrintStatus.IN_PROGRESS)
+            it.copy(printProgress = PrintProgress(state = PrintProgressState.IN_PROGRESS))
         }
 
-        val printResult = mPrint(config)
-        _printerState.update {
-            it.copy(
-                printStatus = PrintStatus.COMPLETED,
+        val printResult = mPrint(config, progressCallback = {
+            completedCount, totalCount ->
+            _printerState.update { oldState ->
+                val newPrintProgress = oldState.printProgress.copy(
+                    completedCount = completedCount,
+                    totalCount = totalCount
+                )
+                oldState.copy(
+                    printProgress = newPrintProgress
+                )
+            }
+        })
+
+        _printerState.update { oldState ->
+            val newPrintProgress = oldState.printProgress.copy(
+                state = PrintProgressState.COMPLETED
+            )
+            oldState.copy(
+                printProgress = newPrintProgress,
                 printResult = printResult
             )
         }
@@ -224,7 +244,7 @@ class PrinterDevicesManager {
      *
      * @return PrintCommandResult indicating the result of the print request
      **/
-    private suspend fun mPrint(config: PrintConfigTransformed?): PrintCommandResult {
+    private suspend fun mPrint(config: PrintConfigTransformed?, progressCallback: (completedCount: Int, totalCount: Int) -> Unit): PrintCommandResult {
         val printerUsbStateValue = _printerState.value
 
         if (printerUsbStateValue.selectedPrinter == null) {
@@ -264,7 +284,7 @@ class PrinterDevicesManager {
                         return@withContext PrintCommandResult.CommunicationError(PrinterCommunicationError.CONNECTION_NULL_ERROR)
                     }
 
-                    return@withContext it.print(config)
+                    return@withContext it.print(config, progressCallback)
                 }
             }
         }

@@ -31,7 +31,6 @@ import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -79,7 +78,7 @@ import com.hx2003.labelprinter.DitherOption
 import com.hx2003.labelprinter.LabelSize
 import com.hx2003.labelprinter.MainActivityViewModel
 import com.hx2003.labelprinter.PrintCommandResult
-import com.hx2003.labelprinter.PrintStatus
+import com.hx2003.labelprinter.PrintProgressState
 import com.hx2003.labelprinter.PrintStatusError
 import com.hx2003.labelprinter.PrinterCommunicationError
 import com.hx2003.labelprinter.R
@@ -99,12 +98,12 @@ fun PreviewScreen(
     val printerState by mainActivityViewModel.printerState.collectAsStateWithLifecycle()
 
     var warningDialogOpened = false
-    var warningDialogText: String? = null
+    var warningDialogText = ""
 
-    val printingInProgress = when(printerState.printStatus) {
-        PrintStatus.NOT_STARTED -> false
-        PrintStatus.IN_PROGRESS -> true
-        PrintStatus.COMPLETED -> false
+    val printingInProgress = when(printerState.printProgress.state) {
+        PrintProgressState.NOT_STARTED -> false
+        PrintProgressState.IN_PROGRESS -> true
+        PrintProgressState.COMPLETED -> false
     }
 
     val printResult = printerState.printResult
@@ -138,8 +137,8 @@ fun PreviewScreen(
                     warningDialogText = stringResource(R.string.parsing_error_description)
                     warningDialogOpened = true
                 }
-                PrinterCommunicationError.GENERIC_ERROR -> {
-                    warningDialogText = stringResource(R.string.generic_error_description)
+                PrinterCommunicationError.TIMEOUT_ERROR -> {
+                    warningDialogText = stringResource(R.string.timeout_error_description)
                     warningDialogOpened = true
                 }
             }
@@ -337,13 +336,17 @@ fun PreviewScreen(
                 }
             }
 
-            // Displays any error messages after print() has completed
+            val descriptionText = when(printingInProgress) {
+                true -> "${printerState.printProgress.completedCount} / ${printerState.printProgress.totalCount} ${stringResource(R.string.items)}"
+                false -> warningDialogText
+            }
             PrintingStatusDialog(
                 titleText =
                     if(printingInProgress) stringResource(R.string.printing) else stringResource(R.string.warning),
-                warnText = warningDialogText,
+                descriptionText = descriptionText,
                 showProgressBar = printingInProgress,
                 showDismissButton = !printingInProgress,
+                showWarningIcon = warningDialogOpened,
                 opened = printingInProgress || warningDialogOpened,
                 onDismissRequest = {
                     mainActivityViewModel.clearPrintStatusAndPrintRequestResult()
@@ -696,9 +699,10 @@ fun Info(
 fun PrintingStatusDialog(
         modifier: Modifier = Modifier,
         titleText: String,
-        warnText: String?,
+        descriptionText: String,
         showProgressBar: Boolean,
         showDismissButton: Boolean,
+        showWarningIcon: Boolean,
         opened: Boolean = false,
         onDismissRequest: () -> Unit,
 ) {
@@ -728,7 +732,7 @@ fun PrintingStatusDialog(
                             text = titleText,
                             style = MaterialTheme.typography.titleLarge
                         )
-                        if(warnText != null) {
+                        if(showWarningIcon) {
                             Icon(
                                 Icons.Outlined.Warning,
                                 contentDescription = "Warning",
@@ -736,16 +740,12 @@ fun PrintingStatusDialog(
                             )
                         }
                     }
-                    if(warnText != null) {
-                        Text(
-                            text = warnText,
-                        )
-                    }
-                    if(showProgressBar) {
-                        Spacer(
-                            modifier = Modifier.height(4.dp)
-                        )
 
+                    Text(
+                        text = descriptionText,
+                    )
+
+                    if(showProgressBar) {
                         LinearProgressIndicator (
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.secondary,
