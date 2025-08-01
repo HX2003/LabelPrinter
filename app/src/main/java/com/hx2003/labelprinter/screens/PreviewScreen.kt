@@ -169,7 +169,9 @@ fun PreviewScreen(
     var labelSizeText = stringResource(R.string.unknown)
     printConfigTransformed.let {
         if (it != null) {
-            labelSizeText = it.labelSize.size.toString() + "mm"
+            if(it.labelSize != LabelSize.UNKNOWN) {
+                labelSizeText = it.labelSize.size.toString() + "mm"
+            }
         }
     }
 
