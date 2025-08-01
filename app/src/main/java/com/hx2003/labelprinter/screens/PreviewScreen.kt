@@ -53,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +84,7 @@ import com.hx2003.labelprinter.PrintStatusError
 import com.hx2003.labelprinter.PrinterCommunicationError
 import com.hx2003.labelprinter.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.SortedMap
 import kotlin.math.ceil
 
@@ -96,6 +98,8 @@ fun PreviewScreen(
     val printConfig by mainActivityViewModel.printConfig.collectAsStateWithLifecycle()
     val printConfigTransformed by mainActivityViewModel.printConfigTransformed.collectAsStateWithLifecycle()
     val printerState by mainActivityViewModel.printerState.collectAsStateWithLifecycle()
+
+    val coroutineScope = rememberCoroutineScope() // Obtain a coroutineScope tied to the composable's lifecycle
 
     var warningDialogOpened = false
     var warningDialogText = ""
@@ -258,9 +262,11 @@ fun PreviewScreen(
                             value.productName ?: ""
                         }.toSortedMap(),
                         onOptionSelected = { selected ->
+                            coroutineScope.launch {
                                 mainActivityViewModel.setSelectedPrinter(selected)
                                 mainActivityViewModel.requestPermissionAndConnect()
                                 mainActivityViewModel.queryPrinter()
+                            }
                         },
                         noAvailableOptionsText = stringResource(R.string.no_printer_found),
                         modifier = Modifier.fillMaxWidth(),
@@ -323,10 +329,12 @@ fun PreviewScreen(
                             containerColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ),
                         onClick = {
-                            // note requestPermissionAndConnect() actually causes a reconnection
-                            // if already previously connected, this is not ideal but...
-                            mainActivityViewModel.requestPermissionAndConnect()
-                            mainActivityViewModel.print()
+                            coroutineScope.launch {
+                                // note requestPermissionAndConnect() actually causes a reconnection
+                                // if already previously connected, this is not ideal but...
+                                mainActivityViewModel.requestPermissionAndConnect()
+                                mainActivityViewModel.print()
+                            }
                         }
                     ) {
                         Text(

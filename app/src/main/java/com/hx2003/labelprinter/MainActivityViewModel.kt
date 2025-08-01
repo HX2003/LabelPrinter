@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import com.hx2003.labelprinter.utils.transformBitmap
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -141,16 +142,16 @@ class MainActivityViewModel(
         printerDevicesManager.clearPrintStatusAndPrintRequestResult()
     }
 
-    fun requestPermissionAndConnect() {
-        viewModelScope.launch {
+    suspend fun requestPermissionAndConnect() {
+        viewModelScope.async {
             printerDevicesManager.requestPermissionAndConnect()
-        }
+        }.await()
     }
 
-    fun queryPrinter() {
-        viewModelScope.launch {
+    suspend fun queryPrinter() {
+        viewModelScope.async {
             printerDevicesManager.query()
-        }
+        }.await()
     }
 
     fun print() {

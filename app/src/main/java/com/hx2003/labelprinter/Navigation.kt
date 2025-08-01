@@ -99,19 +99,16 @@ fun Navigation(
             }
         },
         transitionSpec = {
-            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
-                animationSpec = tween(AnimationDuration)
-            )
+            slideInHorizontally(animationSpec = tween(AnimationDuration), initialOffsetX = { it }) togetherWith
+                    slideOutHorizontally(animationSpec = tween(AnimationDuration), targetOffsetX = { -it })
         },
         popTransitionSpec = {
-            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
-                animationSpec = tween(AnimationDuration)
-            )
+            slideInHorizontally(animationSpec = tween(AnimationDuration), initialOffsetX = { it }) togetherWith
+                    slideOutHorizontally(animationSpec = tween(AnimationDuration), targetOffsetX = { -it })
         },
         predictivePopTransitionSpec = {
-            fadeIn(animationSpec = tween(AnimationDuration)) togetherWith fadeOut(
-                animationSpec = tween(AnimationDuration)
-            )
+            slideInHorizontally(animationSpec = tween(AnimationDuration), initialOffsetX = { it }) togetherWith
+                    slideOutHorizontally(animationSpec = tween(AnimationDuration), targetOffsetX = { -it })
         },
     )
 }
