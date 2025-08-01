@@ -47,10 +47,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,12 +68,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.hx2003.labelprinter.DitherOption
-import com.hx2003.labelprinter.PrintError
+import com.hx2003.labelprinter.LabelSize
 import com.hx2003.labelprinter.MainActivityViewModel
+import com.hx2003.labelprinter.PrinterError
+import com.hx2003.labelprinter.PrinterPrintStatus
 import com.hx2003.labelprinter.R
-import kotlinx.coroutines.launch
+import com.hx2003.labelprinter.utils.MyResult
+import kotlinx.coroutines.delay
 import java.util.SortedMap
 import kotlin.math.ceil
 
@@ -84,15 +90,72 @@ fun PreviewScreen(
     onBack: () -> Unit = {},
     mainActivityViewModel: MainActivityViewModel
 ) {
-    val warningDialogOpened = remember { mutableStateOf(false) }
-    val warningDialogText = remember { mutableStateOf("") }
+    val printConfig by mainActivityViewModel.printConfig.collectAsStateWithLifecycle()
+    val printConfigTransformed by mainActivityViewModel.printConfigTransformed.collectAsStateWithLifecycle()
+    val printerState by mainActivityViewModel.printerState.collectAsStateWithLifecycle()
 
-    val printReactiveState by mainActivityViewModel.printConfigReactiveState.collectAsStateWithLifecycle()
-    val bitmapState by mainActivityViewModel.bitmapState.collectAsStateWithLifecycle()
-    val transformedBitmapState by mainActivityViewModel.transformedBitmapState.collectAsStateWithLifecycle()
-    val printerUsbState by mainActivityViewModel.printerUsbState.collectAsStateWithLifecycle()
+    var warningDialogOpened = false
+    var warningDialogText = ""
 
-    val coroutineScope = rememberCoroutineScope() // Obtain a coroutineScope tied to the composable's lifecycle
+    val printResult = printerState.printResult
+    when (printResult) {
+        is MyResult.NoError -> {
+            if(printResult.data == PrinterPrintStatus.COMPLETED) {
+                onDone()
+            }
+        }
+        is MyResult.HasError -> {
+            when (printResult.error) {
+                PrinterError.NONE -> {}
+                PrinterError.NO_PRINTER_FOUND -> {
+                    warningDialogText = stringResource(R.string.warning_no_printer_found)
+                    warningDialogOpened = true
+                }
+
+                PrinterError.PERMISSION_NOT_GRANTED -> {
+                    warningDialogText = stringResource(R.string.warning_permission_not_granted)
+                    warningDialogOpened = true
+                }
+
+                PrinterError.GENERIC_ERROR -> {
+                    warningDialogText = stringResource(R.string.warning_printer_generic)
+                    warningDialogOpened = true
+                }
+                PrinterError.LABEL_SIZE_UNKNOWN -> {
+                    warningDialogText = stringResource(R.string.warning_label_size_unknown)
+                    warningDialogOpened = true
+                }
+                PrinterError.LABEL_SIZE_MISMATCH -> {
+                    warningDialogText = stringResource(R.string.warning_label_size_mismatch)
+                    warningDialogOpened = true
+                }
+            }
+        }
+    }
+
+
+    val queryResult = printerState.queryResult
+    val labelSizeText = when (queryResult) {
+        is MyResult.NoError -> {
+            queryResult.data.labelSize.size.toString() + "mm"
+        }
+        is MyResult.HasError -> {
+            stringResource(R.string.unknown)
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                // Periodically query the connected printer for its' status
+                // This is necessary, as we printer's status influences the UI
+                // Tied to PreviewScreen, so it will not waste user's battery by querying the printer in the background
+                delay(333)
+                mainActivityViewModel.queryPrinter()
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -124,7 +187,7 @@ fun PreviewScreen(
                     .fillMaxWidth()
                     .weight(1f)
                 ) {
-                    val transformBitmap = transformedBitmapState?.bitmap
+                    val transformBitmap = printConfigTransformed?.bitmap
                     PrintPreviewCanvas(
                         modifier = Modifier
                             .fillMaxSize(),
@@ -158,22 +221,21 @@ fun PreviewScreen(
                 ) {
                     OptionControl(
                         label = stringResource(R.string.printer),
-                        selectedOption = printerUsbState.selectedPrinter,
-                        options = printerUsbState.availablePrinters.mapValues { (_, value) ->
+                        selectedOption = printerState.selectedPrinter,
+                        options = printerState.availablePrinters.mapValues { (_, value) ->
                             value.productName ?: ""
                         }.toSortedMap(),
                         onOptionSelected = { selected ->
-                            coroutineScope.launch {
                                 mainActivityViewModel.setSelectedPrinter(selected)
                                 mainActivityViewModel.requestPermissionAndConnect()
-                            }
+                                mainActivityViewModel.queryPrinter()
                         },
                         noAvailableOptionsText = stringResource(R.string.no_printer_found),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     IntegerControl(
                         label = stringResource(R.string.copies),
-                        value = printReactiveState.numCopies,
+                        value = printConfig.numCopies,
                         onValueChange = {
                             mainActivityViewModel.setNumCopies(it)
                         },
@@ -181,7 +243,7 @@ fun PreviewScreen(
                     )
                     OptionControl(
                         label = stringResource(R.string.dither),
-                        selectedOption = bitmapState.dither.toString(),
+                        selectedOption = printConfig.dither.toString(),
                         options = sortedMapOf(
                             Pair(DitherOption.NONE.toString(), stringResource(R.string.none)),
                             Pair(DitherOption.CLASSIC.toString(),stringResource(R.string.classic))
@@ -192,10 +254,10 @@ fun PreviewScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    if(bitmapState.dither == DitherOption.NONE) {
+                    if(printConfig.dither == DitherOption.NONE) {
                         SliderControl(
                             label = stringResource(R.string.threshold),
-                            value = bitmapState.colorThreshold,
+                            value = printConfig.colorThreshold,
                             onValueChange = {
                                 mainActivityViewModel.setColorThreshold(it)
                             },
@@ -205,7 +267,7 @@ fun PreviewScreen(
 
                     Info(
                         label = stringResource(R.string.label_size),
-                        value = stringResource(R.string.unknown),
+                        value = labelSizeText,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -215,43 +277,25 @@ fun PreviewScreen(
                 Column(
                     modifier = Modifier.padding( 16.dp)
                 ) {
-                    val stringWarningNoPrinterFound =
-                        stringResource(R.string.warning_no_printer_found)
-                    val stringWarningPermissionNotGranted =
-                        stringResource(R.string.warning_permission_not_granted)
-                    val stringWarningPrinterGeneric =
-                        stringResource(R.string.warning_printer_generic)
-
+                    val alpha = if (printerState.availablePrinters.isNotEmpty() && printConfigTransformed != null && printConfigTransformed?.labelSize != LabelSize.UNKNOWN)  {
+                        1.0f
+                    } else {
+                        0.3f
+                    }
                     TextButton(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
-                            .alpha(if (printerUsbState.availablePrinters.isNotEmpty()) 1.0f else 0.3f),
+                            .alpha(alpha),
                         colors = ButtonDefaults.textButtonColors(
                             containerColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ),
                         onClick = {
-                            coroutineScope.launch {
-                                val res: PrintError = mainActivityViewModel.print()
-                                when (res) {
-                                    PrintError.NONE -> onDone()
-                                    PrintError.NO_PRINTER_FOUND -> {
-                                        warningDialogText.value = stringWarningNoPrinterFound
-                                        warningDialogOpened.value = true
-                                    }
-
-                                    PrintError.PERMISSION_NOT_GRANTED -> {
-                                        warningDialogText.value = stringWarningPermissionNotGranted
-                                        warningDialogOpened.value = true
-                                    }
-
-                                    PrintError.GENERIC_ERROR -> {
-                                        warningDialogText.value = stringWarningPrinterGeneric
-                                        warningDialogOpened.value = true
-                                    }
-                                }
-                            }
-                        },
+                            // note requestPermissionAndConnect() actually causes a reconnection
+                            // if already previously connected, this is not ideal but...
+                            mainActivityViewModel.requestPermissionAndConnect()
+                            mainActivityViewModel.print()
+                        }
                     ) {
                         Text(
                             text = stringResource(R.string.print),
@@ -262,11 +306,12 @@ fun PreviewScreen(
                 }
             }
 
+            // Displays any error messages from PrintRequestResult()
             WarningAlertDialog (
-                text = warningDialogText.value,
-                opened = warningDialogOpened.value,
+                text = warningDialogText,
+                opened = warningDialogOpened,
                 onDismissRequest = {
-                    warningDialogOpened.value = false
+                    mainActivityViewModel.clearPrintRequestResult()
                 }
             )
         }
@@ -307,10 +352,10 @@ fun PrintPreviewCanvas(
             // We want the bitmap to fit the 90% of the longest edge by default
             var scaleCorrection = 0.9f
 
-            if (canvasAspectRatio > originalBitmapAspectRatio) {
-                scaleCorrection *= canvasHeight / bitmap.height
+            scaleCorrection *= if (canvasAspectRatio > originalBitmapAspectRatio) {
+                canvasHeight / bitmap.height
             } else {
-                scaleCorrection *= canvasWidth / bitmap.width
+                canvasWidth / bitmap.width
             }
 
             withTransform({

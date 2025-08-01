@@ -39,19 +39,11 @@ sealed class Screen: NavKey {
 }
 
 @Composable
-fun Navigation(modifier: Modifier = Modifier) {
+fun Navigation(
+    modifier: Modifier = Modifier,
+    mainActivityViewModel: MainActivityViewModel
+) {
     var useSpecialPrintAnimation by remember { mutableStateOf(false) }
-
-    // We create printerViewModel: PrinterViewModel = koinViewModel() here,
-    // we only want 1 instance since some states must be shared between the screens
-    // In this case, printerViewModel is scoped to the closest ViewModelStoreOwner, which is the MainActivity.
-    // This means the ViewModel will survive configuration changes (like screen rotations),
-    // because MainActivity's ViewModelStore is retained across activity recreation.
-    //
-    // We avoid declaring it inside HomeScreen or PreviewScreen which will scope it to the NavBackStackEntry
-    // and also result in separate instances of printerViewModel for each screen. Moreover, if we pop of the NavEntry,
-    // the state will be lost
-    val mainActivityViewModel: MainActivityViewModel = koinViewModel()
 
     val backStack = rememberNavBackStack(Screen.Home)
     NavDisplay(

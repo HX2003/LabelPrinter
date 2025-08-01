@@ -19,4 +19,6 @@
     <string name="warning_no_printer_found">No printer found, check whether your printer is connected.</string>
     <string name="warning_permission_not_granted">Permission denied, please grant the permission to access the printer.</string>
     <string name="warning_printer_generic">Printer not ready, please try again.</string>
+    <string name="warning_label_size_unknown">Label size is unknown, please try again.</string>
+    <string name="warning_label_size_mismatch">Label size mismatch, please try again.</string>
 </resources>

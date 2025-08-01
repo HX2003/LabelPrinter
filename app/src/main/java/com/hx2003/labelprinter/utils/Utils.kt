@@ -14,20 +14,24 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
-import com.hx2003.labelprinter.BitmapState
 import com.hx2003.labelprinter.DitherOption
 import java.io.File
 import androidx.core.graphics.get
 import androidx.core.graphics.set
+import com.hx2003.labelprinter.LabelSize
 
-fun transformBitmap(bitmapState: BitmapState): Bitmap? {
+sealed interface MyResult<out NoErrorT, out HasErrorT> {
+    data class NoError <out NoErrorT> (val data: NoErrorT) : MyResult<NoErrorT, Nothing>
+    data class HasError <out HasErrorT> (val error: HasErrorT): MyResult<Nothing, HasErrorT>
+}
+
+fun transformBitmap(sourceBitmap: Bitmap?, dither: DitherOption, colorThreshold: Float, labelSize: LabelSize): Bitmap? {
     // Rescale the sourceBitmap,
     // convert to grayscale
     // then optionally apply dithering or directly convert to B&W
-    val sourceBitmap = bitmapState.bitmap
     if(sourceBitmap == null) return null
 
-    val scalingFactor = bitmapState.labelWidth.pixels.toFloat() / sourceBitmap.height
+    val scalingFactor = labelSize.pixels.toFloat() / sourceBitmap.height
 
     // Convert the high-res image to a low-res image
     // suitable for printing
@@ -53,8 +57,8 @@ fun transformBitmap(bitmapState: BitmapState): Bitmap? {
     val height = grayScaleBitmap.height
     val width = grayScaleBitmap.width
 
-    if(bitmapState.dither == DitherOption.NONE) {
-        val threshold: Int = (bitmapState.colorThreshold * 255).toInt()
+    if(dither == DitherOption.NONE) {
+        val threshold: Int = (colorThreshold * 255).toInt()
         // If pixel grayscale is below threshold it is set to black otherwise white
         for (x in 0 until width) {
             for (y in 0 until height) {
@@ -80,7 +84,7 @@ fun transformBitmap(bitmapState: BitmapState): Bitmap? {
             }
         }
 
-        val threshold: Int = 128
+        val threshold = 128
         // Floyd–Steinberg dithering
         for (y in 0 until height) {
             for (x in 0 until width) {

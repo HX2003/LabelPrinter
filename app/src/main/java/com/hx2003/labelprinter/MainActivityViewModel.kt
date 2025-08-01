@@ -4,15 +4,17 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hx2003.labelprinter.utils.MyResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import com.hx2003.labelprinter.utils.transformBitmap
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 data class CropViewState(
     var uri: Uri? = null,
@@ -24,23 +26,20 @@ enum class DitherOption {
     CLASSIC
 }
 
-enum class LabelSizeOption (val size: Int, val pixels: Int) {
-    MM6(6, 32),
-    MM9(9, 48),
-    MM12(12, 64),
-    MM18(24, 96),
-    MM24(24, 128)
-}
-
-data class BitmapState (
-    var labelWidth: LabelSizeOption = LabelSizeOption.MM12,
+data class PrintConfig (
+    val numCopies: Int = 1,
     var dither: DitherOption = DitherOption.CLASSIC,
     var colorThreshold: Float = 0.5f,
     var bitmap: Bitmap? = null
 )
 
-data class PrintReactiveState (
-    var numCopies: Int = 1
+data class PrintConfigTransformed (
+    val numCopies: Int = 1,
+    var dither: DitherOption = DitherOption.CLASSIC,
+    var colorThreshold: Float = 0.5f,
+    var bitmap: Bitmap? = null,
+    // Added labelSize
+    var labelSize: LabelSize = LabelSize.MM12,
 )
 
 class MainActivityViewModel(
@@ -49,24 +48,47 @@ class MainActivityViewModel(
     private val _cropViewState = MutableStateFlow(CropViewState())
     val cropViewState = _cropViewState.asStateFlow()
 
-    private val _printReactiveState = MutableStateFlow(PrintReactiveState())
-    val printConfigReactiveState = _printReactiveState.asStateFlow()
+    val printerState = printerDevicesManager.printerState
 
-    private val _bitmapState = MutableStateFlow(BitmapState())
-    val bitmapState = _bitmapState.asStateFlow()
-
-    val printerUsbState = printerDevicesManager.printerUsbState
+    private val _printConfig = MutableStateFlow(PrintConfig())
+    val printConfig = _printConfig.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val transformedBitmapState: StateFlow<BitmapState?> = bitmapState
-        .mapLatest { bitmapState ->
-            // Basically, whenever bitmapState changes
-            // we make a new bitmapState with the transformed bitmap
-            bitmapState.copy(
-                bitmap = transformBitmap(bitmapState = bitmapState)
+    val printConfigTransformed: StateFlow<PrintConfigTransformed?> = printConfig
+        .combine(
+            printerState
+        ) {
+            printConfig, printerState ->
+            val numCopies = printConfig.numCopies
+            val dither = printConfig.dither
+            val colorThreshold = printConfig.colorThreshold
+
+            val queryResult = printerState.queryResult
+            val labelSize = when (queryResult) {
+                is MyResult.NoError -> {
+                    // Smart cast gives you access to .data
+                    queryResult.data.labelSize
+                }
+                is MyResult.HasError -> {
+                    LabelSize.UNKNOWN
+                }
+            }
+
+            // Basically, whenever printConfig or printerState changes
+            // we make a new printConfigTransformed with the transformed bitmap
+            PrintConfigTransformed(
+                numCopies = numCopies,
+                dither = dither,
+                colorThreshold = colorThreshold,
+                bitmap = transformBitmap(
+                    sourceBitmap = printConfig.bitmap,
+                    dither = dither,
+                    colorThreshold = colorThreshold,
+                    labelSize = labelSize
+                ),
+                labelSize = labelSize
             )
-        }
-        .stateIn(
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(),
             initialValue = null
@@ -84,25 +106,25 @@ class MainActivityViewModel(
     }
 
     fun setCroppedBitmap(bitmap: Bitmap?) {
-        _bitmapState.update {
+        _printConfig.update {
             it.copy(bitmap = bitmap)
         }
     }
 
     fun setDither(dither: DitherOption) {
-        _bitmapState.update {
+        _printConfig.update {
             it.copy(dither = dither)
         }
     }
 
     fun setColorThreshold(colorThreshold: Float) {
-        _bitmapState.update {
+        _printConfig.update {
             it.copy(colorThreshold = colorThreshold)
         }
     }
 
     fun setNumCopies(numCopies: Int) {
-        _printReactiveState.update {
+        _printConfig.update {
             it.copy(numCopies = numCopies)
         }
     }
@@ -111,13 +133,28 @@ class MainActivityViewModel(
         printerDevicesManager.setSelectedPrinter(newSelectedPrinter)
     }
 
-    suspend fun print(): PrintError {
-        return printerDevicesManager.print()
+    fun clearPrintRequestResult() {
+        printerDevicesManager.clearPrintRequestResult()
     }
 
-    suspend fun requestPermissionAndConnect(): PrintError {
-        return printerDevicesManager.requestPermissionAndConnect()
+    fun requestPermissionAndConnect() {
+        viewModelScope.launch {
+            printerDevicesManager.requestPermissionAndConnect()
+        }
     }
+
+    fun queryPrinter() {
+        viewModelScope.launch {
+            printerDevicesManager.query()
+        }
+    }
+
+    fun print() {
+        viewModelScope.launch {
+            printerDevicesManager.print(printConfigTransformed.value)
+        }
+    }
+
 
     /*var str: Int
         get() = printerUsbController.str
