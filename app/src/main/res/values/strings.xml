@@ -7,6 +7,9 @@
     <string name="warning">Warning</string>
     <string name="unknown">Unknown</string>
     <string name="no_printer_found">No printer found</string>
+    <string name="printing">Printing</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="cancel">Cancel</string>
 
     <string name="print">Print</string>
     <string name="printer">Printer</string>

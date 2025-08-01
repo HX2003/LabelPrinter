@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,10 +31,12 @@ import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -76,6 +79,7 @@ import com.hx2003.labelprinter.DitherOption
 import com.hx2003.labelprinter.LabelSize
 import com.hx2003.labelprinter.MainActivityViewModel
 import com.hx2003.labelprinter.PrintCommandResult
+import com.hx2003.labelprinter.PrintStatus
 import com.hx2003.labelprinter.PrintStatusError
 import com.hx2003.labelprinter.PrinterCommunicationError
 import com.hx2003.labelprinter.R
@@ -95,7 +99,13 @@ fun PreviewScreen(
     val printerState by mainActivityViewModel.printerState.collectAsStateWithLifecycle()
 
     var warningDialogOpened = false
-    var warningDialogText = ""
+    var warningDialogText: String? = null
+
+    val printingInProgress = when(printerState.printStatus) {
+        PrintStatus.NOT_STARTED -> false
+        PrintStatus.IN_PROGRESS -> true
+        PrintStatus.COMPLETED -> false
+    }
 
     val printResult = printerState.printResult
     when (printResult) {
@@ -160,7 +170,7 @@ fun PreviewScreen(
     var labelSizeText = stringResource(R.string.unknown)
     printConfigTransformed.let {
         if (it != null) {
-            labelSizeText = it.labelSize.pixels.toString() + "mm"
+            labelSizeText = it.labelSize.size.toString() + "mm"
         }
     }
 
@@ -168,6 +178,7 @@ fun PreviewScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
+                // Heartbeat
                 // Periodically query the connected printer for its' status
                 // This is necessary, as we printer's status influences the UI
                 // Tied to PreviewScreen, so it will not waste user's battery by querying the printer in the background
@@ -327,9 +338,13 @@ fun PreviewScreen(
             }
 
             // Displays any error messages after print() has completed
-            WarningAlertDialog (
-                text = warningDialogText,
-                opened = warningDialogOpened,
+            PrintingStatusDialog(
+                titleText =
+                    if(printingInProgress) stringResource(R.string.printing) else stringResource(R.string.warning),
+                warnText = warningDialogText,
+                showProgressBar = printingInProgress,
+                showDismissButton = !printingInProgress,
+                opened = printingInProgress || warningDialogOpened,
                 onDismissRequest = {
                     mainActivityViewModel.clearPrintStatusAndPrintRequestResult()
                 }
@@ -678,9 +693,12 @@ fun Info(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WarningAlertDialog(
+fun PrintingStatusDialog(
         modifier: Modifier = Modifier,
-        text: String,
+        titleText: String,
+        warnText: String?,
+        showProgressBar: Boolean,
+        showDismissButton: Boolean,
         opened: Boolean = false,
         onDismissRequest: () -> Unit,
 ) {
@@ -707,27 +725,48 @@ fun WarningAlertDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = stringResource(R.string.warning),
+                            text = titleText,
                             style = MaterialTheme.typography.titleLarge
                         )
-                        Icon(
-                            Icons.Outlined.Warning,
-                            contentDescription = "Warning",
-                            tint = AlertDialogDefaults.iconContentColor
+                        if(warnText != null) {
+                            Icon(
+                                Icons.Outlined.Warning,
+                                contentDescription = "Warning",
+                                tint = AlertDialogDefaults.iconContentColor
+                            )
+                        }
+                    }
+                    if(warnText != null) {
+                        Text(
+                            text = warnText,
                         )
                     }
-                    Text(
-                        text = text,
-                    )
-                    TextButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text(
-                            text = "Dismiss",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AlertDialogDefaults.textContentColor
+                    if(showProgressBar) {
+                        Spacer(
+                            modifier = Modifier.height(4.dp)
                         )
+
+                        LinearProgressIndicator (
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.secondary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(4.dp)
+                        )
+                    }
+                    if(showDismissButton) {
+                        TextButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.dismiss),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AlertDialogDefaults.textContentColor
+                            )
+                        }
                     }
                 }
             }

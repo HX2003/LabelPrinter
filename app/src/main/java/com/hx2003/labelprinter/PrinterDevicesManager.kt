@@ -222,7 +222,7 @@ class PrinterDevicesManager {
      *
      * @param config The print configuration including the final black and white bitmap, label size and more
      *
-     * @return Result<PrinterPrintStatus, PrinterError> indicating the result of the print request
+     * @return PrintCommandResult indicating the result of the print request
      **/
     private suspend fun mPrint(config: PrintConfigTransformed?): PrintCommandResult {
         val printerUsbStateValue = _printerState.value
@@ -249,40 +249,15 @@ class PrinterDevicesManager {
             return PrintCommandResult.DeviceError(PrintStatusError.CONFIG_NULL_ERROR)
         }
 
-        query() // query the printer for its latest status
-
         // We will do one more check on the label size
         if(config.labelSize == LabelSize.UNKNOWN) {
             return PrintCommandResult.DeviceError(PrintStatusError.LABEL_SIZE_UNKNOWN_ERROR)
         }
 
-        val queryResult = _printerState.value.queryResult
-        when (queryResult) {
-            is QueryCommandResult.Success -> {
-                val actual = queryResult.data.labelSize
-                val expected = config.labelSize
-
-                if(actual != expected) {
-                    Log.w(tag, "label size mismatch got $actual, expected $expected")
-                    return PrintCommandResult.DeviceError(PrintStatusError.LABEL_SIZE_MISMATCH_ERROR)
-                }
-            }
-            is QueryCommandResult.CommunicationError -> {
-                Log.w(tag, "query CommunicationError")
-                return PrintCommandResult.CommunicationError(queryResult.error)
-            }
-            is QueryCommandResult.DeviceError -> {
-                Log.w(tag, "query DeviceError")
-                PrintCommandResult.DeviceError(PrintStatusError.DEVICE_ERROR)
-            }
-            null -> {
-                Log.w(tag, "queryResult is null (weird?)")
-                return PrintCommandResult.CommunicationError(PrinterCommunicationError.GENERIC_ERROR)
-            }
-        }
-
         return withContext(Dispatchers.IO) {
-            // This mutex is very important
+            // This mutex is very important as we don't want,
+            // the periodic query heartbeat to interfere with our printing
+            // In fact, usb write must not be allowed during printing according to the manufacturer
             printerDeviceConnectionMutex.withLock {
                 printerDeviceConnection.let {
                     if (it == null) {
@@ -312,7 +287,7 @@ class PrinterDevicesManager {
      * Sends a query request for the selected printer
      * Note: The selected printer must already be connected via requestPermissionAndConnect()
      *
-     * @return Result<PrinterQueryValue, PrinterError> indicating the result of the query request
+     * @return QueryCommandResult indicating the result of the query request
      **/
     private suspend fun mQuery(): QueryCommandResult {
         val printerUsbStateValue = _printerState.value
@@ -346,7 +321,7 @@ class PrinterDevicesManager {
      * Request permission for the selected printer,
      * if permission is granted, connect to the printer and get its status
      *
-     * @return Result<Unit, PrinterError> indicating the result of the request permission and connection
+     * @return RequestPermissionAndConnectResult indicating the result of the request permission and connection
      **/
     suspend fun requestPermissionAndConnect(): RequestPermissionAndConnectResult {
         val printerUsbStateValue = _printerState.value
