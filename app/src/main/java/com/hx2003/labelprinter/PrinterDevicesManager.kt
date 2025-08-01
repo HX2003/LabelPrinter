@@ -63,7 +63,7 @@ class PrinterDevicesManager {
 
     private val ACTION_USB_PERMISSION = "com.android.example.USB_PERMISSION"
     private var requestPermissionDeferrable: CompletableDeferred<Boolean>? = null
-    private var usbPermissionTimeout: Long = 500
+    //private var usbPermissionTimeout: Long = 500
 
     private var printerDeviceConnectionMutex = Mutex()
     private var printerDeviceConnection: PrinterDeviceConnection? = null
@@ -372,13 +372,22 @@ class PrinterDevicesManager {
             usbManager.requestPermission(usbDevice, pendingIntent)
 
             // Wait for the requestPermissionDeferrable flag to be set
-            val result = withTimeoutOrNull(usbPermissionTimeout) {
+            val result = requestPermissionDeferrable!!.await()
+
+            if (!result) {
+                return RequestPermissionAndConnectResult.Failure(PrinterCommunicationError.PERMISSION_ERROR)
+            }
+
+            // Adding a timeout here does not quite make sense,
+            // as the user can take as long as possible to respond to the permission request popup
+            // However, it means if the permission event is not received for some reason, there may be a problem
+            /*val result = withTimeoutOrNull(usbPermissionTimeout) {
                 requestPermissionDeferrable!!.await()
             }
 
             if (result == null || !result) {
                 return RequestPermissionAndConnectResult.Failure(PrinterCommunicationError.PERMISSION_ERROR)
-            }
+            }*/
         }
 
         // this mutex is very important
