@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hx2003.labelprinter.utils.MyResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,11 +64,16 @@ class MainActivityViewModel(
 
             val queryResult = printerState.queryResult
             val labelSize = when (queryResult) {
-                is MyResult.NoError -> {
-                    // Smart cast gives you access to .data
+                is QueryCommandResult.Success -> {
                     queryResult.data.labelSize
                 }
-                is MyResult.HasError -> {
+                is QueryCommandResult.CommunicationError -> {
+                    LabelSize.UNKNOWN
+                }
+                is QueryCommandResult.DeviceError -> {
+                    LabelSize.UNKNOWN
+                }
+                null -> {
                     LabelSize.UNKNOWN
                 }
             }
@@ -133,8 +137,8 @@ class MainActivityViewModel(
         printerDevicesManager.setSelectedPrinter(newSelectedPrinter)
     }
 
-    fun clearPrintRequestResult() {
-        printerDevicesManager.clearPrintRequestResult()
+    fun clearPrintStatusAndPrintRequestResult() {
+        printerDevicesManager.clearPrintStatusAndPrintRequestResult()
     }
 
     fun requestPermissionAndConnect() {

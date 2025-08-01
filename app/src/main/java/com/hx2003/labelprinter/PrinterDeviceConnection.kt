@@ -8,10 +8,34 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.core.graphics.get
-import com.hx2003.labelprinter.utils.MyResult
 import kotlinx.coroutines.delay
 import java.io.ByteArrayOutputStream
-import kotlin.experimental.and
+
+/**
+ * Represents possible error types that can occur during printer communication,
+ * it does not include errors reported by the printer
+ */
+enum class PrinterCommunicationError {
+    NO_PRINTER_ERROR, // There is no available printer
+    PERMISSION_ERROR, // Permission was not granted to access the printer
+    CONNECTION_NULL_ERROR, // DeviceConnection is null
+    USB_SETUP_ERROR,  // Error setting up the usb connection
+    TRANSFER_ERROR,   // USB bulkTransfer (read or write) error
+    PARSING_ERROR,    // The received data has unexpected values
+    GENERIC_ERROR     // Any other errors
+    // NONE,          // No error occurred, communication was successful
+}
+
+/**
+ * Represents possible error types that can occur during a print.
+ * excluding communication error
+ */
+enum class PrintStatusError {
+    CONFIG_NULL_ERROR,
+    LABEL_SIZE_UNKNOWN_ERROR,
+    LABEL_SIZE_MISMATCH_ERROR,
+    DEVICE_ERROR // device is in a invalid state as reported by query status
+}
 
 enum class LabelSize (val size: Int, val pixels: Int) {
     MM6(6, 32),
@@ -21,12 +45,42 @@ enum class LabelSize (val size: Int, val pixels: Int) {
     MM24(24, 128),
     UNKNOWN(0, 64) // We set this to 64 pixels, so that at least something can be rendered
 }
-
-data class PrinterQueryValue (
-    val labelSize: LabelSize = LabelSize.MM12
+data class PrinterQueryValue(
+    val labelSize: LabelSize = LabelSize.UNKNOWN,
+    val status: Byte,
+    val phaseType: Byte,
+    val phase1: Byte,
+    val phase2: Byte
 )
 
-class PrinterDeviceConnection(
+data class PrinterQueryStatusError(
+    val labelSize: LabelSize = LabelSize.UNKNOWN,
+    val error1: Byte,
+    val error2: Byte,
+    val status: Byte,
+    val phaseType: Byte,
+    val phase1: Byte,
+    val phase2: Byte
+)
+
+sealed interface OpenCommandResult {
+    object Success: OpenCommandResult
+    data class CommunicationError(val error: PrinterCommunicationError): OpenCommandResult
+}
+
+sealed interface QueryCommandResult {
+    data class Success(val data: PrinterQueryValue): QueryCommandResult
+    data class CommunicationError(val error: PrinterCommunicationError): QueryCommandResult
+    data class DeviceError(val error: PrinterQueryStatusError): QueryCommandResult
+}
+
+sealed interface PrintCommandResult {
+    object Success: PrintCommandResult
+    data class CommunicationError(val error: PrinterCommunicationError): PrintCommandResult
+    data class DeviceError(val error: PrintStatusError): PrintCommandResult
+}
+
+class PrinterDeviceConnection (
     private val usbManager: UsbManager,
     private val usbDevice: UsbDevice) {
     private var usbDeviceConnection: UsbDeviceConnection? = null
@@ -40,63 +94,63 @@ class PrinterDeviceConnection(
 
     private var open = false
 
-    fun open(): Boolean {
-        val interfaceCount = usbDevice.interfaceCount
-        if (usbDevice.interfaceCount != 1) {
-            Log.w(tag, "interfaceCount != 1, got $interfaceCount instead")
-            return false
-        }
+    fun open(): OpenCommandResult {
+        try {
+            val interfaceCount = usbDevice.interfaceCount
+            if (usbDevice.interfaceCount != 1) {
+                error("interfaceCount != 1, got $interfaceCount instead")
+            }
 
-        val usbInterface = usbDevice.getInterface(0)
+            val usbInterface = usbDevice.getInterface(0)
 
-        val endpointCount = usbInterface.endpointCount
-        if (endpointCount != 2) {
-            Log.w(tag, "endpointCount != 2, got $endpointCount instead")
-            return false
-        }
+            val endpointCount = usbInterface.endpointCount
+            if (endpointCount != 2) {
+                error("endpointCount != 2, got $endpointCount instead")
+            }
 
-        for (i in 0 until endpointCount) {
-            val endpoint = usbInterface.getEndpoint(i)
-            if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                if (endpoint.direction == UsbConstants.USB_DIR_IN) {
-                    usbEndpointIn = endpoint
-                } else {
-                    usbEndpointOut = endpoint
+            for (i in 0 until endpointCount) {
+                val endpoint = usbInterface.getEndpoint(i)
+                if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
+                    if (endpoint.direction == UsbConstants.USB_DIR_IN) {
+                        usbEndpointIn = endpoint
+                    } else {
+                        usbEndpointOut = endpoint
+                    }
                 }
             }
-        }
 
-        if(usbEndpointIn == null) {
-            Log.w(tag, "usbEndpointIn is null")
-            return false
-        }
+            if (usbEndpointIn == null) {
+                error( "usbEndpointIn is null")
+            }
 
-        if(usbEndpointOut == null) {
-            Log.w(tag, "usbEndpointOut is null")
-            return false
-        }
+            if (usbEndpointOut == null) {
+                error( "usbEndpointOut is null")
+            }
 
-        usbDeviceConnection = usbManager.openDevice(usbDevice)
+            usbDeviceConnection = usbManager.openDevice(usbDevice)
 
-        if(usbDeviceConnection == null) {
-            Log.w(tag, "failed to open usb device, usbDeviceConnection is null")
-            return false
-        }
+            if (usbDeviceConnection == null) {
+                error("failed to open usb device, usbDeviceConnection is null")
+            }
 
-        if(!usbDeviceConnection!!.claimInterface(usbInterface, true)) {
-            Log.w(tag, "failed to claim usb device, usbDeviceConnection is null")
-            return false
+            if (!usbDeviceConnection!!.claimInterface(usbInterface, true)) {
+                error("failed to claim usb device, usbDeviceConnection is null")
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "open() error: $e")
+            return OpenCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
         }
 
         open = true
 
-        return true
+        return OpenCommandResult.Success
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    suspend fun query(): MyResult<PrinterQueryValue, PrinterError> {
+    suspend fun query(): QueryCommandResult {
         if(!open) {
-            error("you forgot to call open()")
+            Log.w(tag, "either you forgot to call open(), or open() was previously not successful")
+            return QueryCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
         }
 
         val buffer = ByteArray(32)
@@ -106,36 +160,17 @@ class PrinterDeviceConnection(
             bulkRead(buffer)
         } catch(e: Exception) {
             Log.w(tag, "query bulk write/ bulk read error, exception: $e")
-            return MyResult.HasError(PrinterError.GENERIC_ERROR)
+            return QueryCommandResult.CommunicationError(PrinterCommunicationError.TRANSFER_ERROR)
         }
 
         if(buffer[0].toUInt() != 0x80u && buffer[1].toUInt() != 0x20u) {
             Log.w(tag, "header is not valid")
-            return MyResult.HasError(PrinterError.GENERIC_ERROR)
-        }
-
-        val errorInfoRaw1 = buffer[8]
-        if((errorInfoRaw1 and 0b111) > 0) {
-            // bit 0 is "no media" error
-            // bit 1 is "end of media" error
-            // bit 2 it "tape cutter jam" error
-            Log.w(tag, "printer error byte 1 has error: $errorInfoRaw1")
-            return MyResult.HasError(PrinterError.GENERIC_ERROR)
-        }
-
-        val errorInfoRaw2 = buffer[9]
-        if((errorInfoRaw2 and 0b11111) > 0) {
-            // bit 0 is "replace the media" error
-            // bit 1 is "expansion buffer is full" error
-            // bit 2 is "transmission" error
-            // bit 3 is "transmission buffer full" error
-            // bit 4 is "cover is open" error
-            Log.w(tag, "printer error byte 2 has error: $errorInfoRaw2")
-            return MyResult.HasError(PrinterError.GENERIC_ERROR)
+            return QueryCommandResult.CommunicationError(PrinterCommunicationError.PARSING_ERROR)
         }
 
         val labelSizeRaw = buffer[10].toUInt()
         val labelSize = when (labelSizeRaw) {
+            0u -> LabelSize.UNKNOWN // equal to 0, if no label installed / the lid is removed
             6u -> LabelSize.MM6
             9u -> LabelSize.MM9
             12u -> LabelSize.MM12
@@ -143,20 +178,66 @@ class PrinterDeviceConnection(
             24u -> LabelSize.MM24
             else -> {
                 Log.w(tag, "invalid label size: $labelSizeRaw, only 6, 9, 12, 18, 24 are supported")
-                // labelSizeRaw is also equal to 0, if the lid is removed
-                // Instead of returning the value LabelSize.UNKNOWN, we return an error code
-                return MyResult.HasError(PrinterError.LABEL_SIZE_UNKNOWN)
+                return QueryCommandResult.CommunicationError(PrinterCommunicationError.PARSING_ERROR)
             }
         }
 
-        return MyResult.NoError(PrinterQueryValue(
-            labelSize = labelSize
+        var hasDeviceErrorFlag = false
+
+        val error1 = buffer[8]
+        if(error1 > 0) {
+            // bit 0 is "no media" error
+            // bit 1 is "end of media" error
+            // bit 2 is "tape cutter jam" error
+            // bit 3 is "weak battery" error
+            // bit 6 is "high voltage adapter" error
+            Log.w(tag, "printer indicated error, byte 1: $error1")
+            hasDeviceErrorFlag = true
+        }
+
+        val error2 = buffer[9]
+        if(error2 > 0) {
+            // bit 0 is "replace the media" error
+            // bit 1 is "expansion buffer is full" error
+            // bit 2 is "transmission" error
+            // bit 3 is "transmission buffer full" error
+            // bit 4 is "cover is open" error
+            // bit 5 is "overheating" error
+            Log.w(tag, "printer indicated error, byte 1: $error2")
+            hasDeviceErrorFlag = true
+        }
+
+        val status = buffer[18]
+        val phaseType = buffer[19]
+        val phase1 = buffer[20]
+        val phase2 = buffer[21]
+
+        if(hasDeviceErrorFlag) {
+            return QueryCommandResult.DeviceError(
+                PrinterQueryStatusError(
+                    labelSize = labelSize,
+                    error1 = error1,
+                    error2 = error2,
+                    status = status,
+                    phaseType = phaseType,
+                    phase1 = phase1,
+                    phase2 = phase2
+                )
+            )
+        }
+        return QueryCommandResult.Success(PrinterQueryValue(
+            labelSize = labelSize,
+            status = status,
+            phaseType = phaseType,
+            phase1 = phase1,
+            phase2 = phase2
         ))
     }
 
-    suspend fun print(config: PrintConfigTransformed): MyResult<Unit, PrinterError> {
+    suspend fun print(config: PrintConfigTransformed): PrintCommandResult {
         if(!open) {
-            error("you forgot to call open()")
+            Log.w(tag, "either you forgot to call open(), or open() was previously not successful")
+            return PrintCommandResult.CommunicationError(PrinterCommunicationError.USB_SETUP_ERROR)
         }
 
         try {
@@ -186,10 +267,10 @@ class PrinterDeviceConnection(
             }
         } catch(e: Exception) {
             Log.w(tag, "print bulk write error, exception: $e")
-            return MyResult.HasError(PrinterError.GENERIC_ERROR)
+            return PrintCommandResult.CommunicationError(PrinterCommunicationError.TRANSFER_ERROR)
         }
 
-        return MyResult.NoError(Unit)
+        return PrintCommandResult.Success
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)

@@ -9,7 +9,7 @@ import androidx.compose.ui.Modifier
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 class MainActivity : ComponentActivity() {
-    // We create printerViewModel: PrinterViewModel = koinViewModel() here,
+    // We create printerViewMode here,
     // we only want 1 instance since some states must be shared between the screens
     // In this case, printerViewModel is scoped to the closest ViewModelStoreOwner, which is the MainActivity.
     // This means the ViewModel will survive configuration changes (like screen rotations),

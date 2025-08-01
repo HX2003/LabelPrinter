@@ -16,9 +16,16 @@
     <string name="threshold">Threshold</string>
     <string name="label_size">Label Size</string>
 
-    <string name="warning_no_printer_found">No printer found, check whether your printer is connected.</string>
-    <string name="warning_permission_not_granted">Permission denied, please grant the permission to access the printer.</string>
-    <string name="warning_printer_generic">Printer not ready, please try again.</string>
-    <string name="warning_label_size_unknown">Label size is unknown, please try again.</string>
-    <string name="warning_label_size_mismatch">Label size mismatch, please try again.</string>
+    <string name="no_printer_error_description">No printer found, check whether your printer is connected.</string>
+    <string name="permission_error_description">Permission denied, please grant the permission to access the printer.</string>
+    <string name="connection_null_error_description">An error occurred: CONNECTION_NULL_ERROR</string>
+    <string name="usb_setup_error_description">An error occurred: USB_SETUP_ERROR</string>
+    <string name="transfer_error_description">An error occurred: TRANSFER_ERROR</string>
+    <string name="parsing_error_description">An error occurred: PARSING_ERROR</string>
+    <string name="generic_error_description">An error occurred: GENERIC_ERROR</string>
+
+    <string name="config_null_error_description">An error occurred: CONFIG_NULL_ERROR</string>
+    <string name="label_size_unknown_error_description">Label size is unknown, please try again.</string>
+    <string name="label_size_mismatch_error_description">Label size mismatch, please try again.</string>
+    <string name="device_error_description">An error occurred: DEVICE_ERROR</string>
 </resources>

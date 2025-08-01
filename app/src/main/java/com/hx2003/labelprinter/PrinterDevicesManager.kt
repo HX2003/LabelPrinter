@@ -10,7 +10,6 @@ import android.hardware.usb.UsbManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.registerReceiver
-import com.hx2003.labelprinter.utils.MyResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,28 +22,23 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.xmlpull.v1.XmlPullParser
 import kotlin.collections.mapOf
 
-
-enum class PrinterPrintStatus {
-    NONE,
-    IN_PROGRESS,
-    COMPLETED
+sealed interface RequestPermissionAndConnectResult {
+    object Success: RequestPermissionAndConnectResult
+    data class Failure(val error: PrinterCommunicationError): RequestPermissionAndConnectResult
 }
 
-enum class PrinterError {
-    NONE,
-    NO_PRINTER_FOUND,
-    PERMISSION_NOT_GRANTED,
-    GENERIC_ERROR,
-    LABEL_SIZE_UNKNOWN,
-    LABEL_SIZE_MISMATCH
+enum class PrintStatus {
+    NOT_STARTED, // print has not started
+    IN_PROGRESS, // print is in progress (ui should show loading screen)
+    COMPLETED    // print has completed (regardless success or not)
 }
 
 data class PrinterState (
     var availablePrinters: Map<String, UsbDevice> = mapOf(),
     var selectedPrinter: String? = null,
-    var ready: Boolean = false,
-    val printResult: MyResult<PrinterPrintStatus, PrinterError> = MyResult.NoError(PrinterPrintStatus.NONE),
-    val queryResult: MyResult<PrinterQueryValue, PrinterError> = MyResult.NoError(PrinterQueryValue()),
+    var printStatus: PrintStatus = PrintStatus.NOT_STARTED,
+    val printResult: PrintCommandResult? = null, // only updated after the completion (regardless success or not) of a print
+    val queryResult: QueryCommandResult? = null, // only updated after the completion (regardless success or not) of a query
 )
 
 class PrinterDevicesManager {
@@ -191,9 +185,11 @@ class PrinterDevicesManager {
         }
     }
 
-    fun clearPrintRequestResult() {
+    fun clearPrintStatusAndPrintRequestResult() {
         _printerState.update {
-            it.copy(printResult = MyResult.NoError(PrinterPrintStatus.NONE))
+            it.copy(
+                printStatus = PrintStatus.NOT_STARTED,
+                printResult = null)
         }
     }
 
@@ -208,12 +204,15 @@ class PrinterDevicesManager {
      **/
     suspend fun print(config: PrintConfigTransformed?) {
         _printerState.update {
-            it.copy(printResult = MyResult.NoError(PrinterPrintStatus.IN_PROGRESS))
+            it.copy(printStatus = PrintStatus.IN_PROGRESS)
         }
 
         val printResult = mPrint(config)
         _printerState.update {
-            it.copy(printResult = printResult)
+            it.copy(
+                printStatus = PrintStatus.COMPLETED,
+                printResult = printResult
+            )
         }
     }
 
@@ -225,72 +224,72 @@ class PrinterDevicesManager {
      *
      * @return Result<PrinterPrintStatus, PrinterError> indicating the result of the print request
      **/
-    private suspend fun mPrint(config: PrintConfigTransformed?): MyResult<PrinterPrintStatus, PrinterError> {
+    private suspend fun mPrint(config: PrintConfigTransformed?): PrintCommandResult {
         val printerUsbStateValue = _printerState.value
 
         if (printerUsbStateValue.selectedPrinter == null) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return PrintCommandResult.CommunicationError(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
         val usbDevice = try {
             printerUsbStateValue.availablePrinters.getValue(printerUsbStateValue.selectedPrinter!!)
         } catch (_: NoSuchElementException) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return PrintCommandResult.CommunicationError(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
-        if(!usbManager.hasPermission(usbDevice)) return MyResult.HasError(PrinterError.PERMISSION_NOT_GRANTED)
+        if(!usbManager.hasPermission(usbDevice)) return PrintCommandResult.CommunicationError(PrinterCommunicationError.PERMISSION_ERROR)
 
         if(config == null) {
             Log.w(tag, "config is null")
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return PrintCommandResult.DeviceError(PrintStatusError.CONFIG_NULL_ERROR)
         }
 
         if(config.bitmap == null) {
             Log.w(tag, "config bitmap is null")
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return PrintCommandResult.DeviceError(PrintStatusError.CONFIG_NULL_ERROR)
         }
 
         query() // query the printer for its latest status
 
         // We will do one more check on the label size
         if(config.labelSize == LabelSize.UNKNOWN) {
-            return MyResult.HasError(PrinterError.LABEL_SIZE_UNKNOWN)
+            return PrintCommandResult.DeviceError(PrintStatusError.LABEL_SIZE_UNKNOWN_ERROR)
         }
 
-        val queryResult =  _printerState.value.queryResult
+        val queryResult = _printerState.value.queryResult
         when (queryResult) {
-            is MyResult.NoError -> {
+            is QueryCommandResult.Success -> {
                 val actual = queryResult.data.labelSize
                 val expected = config.labelSize
 
                 if(actual != expected) {
                     Log.w(tag, "label size mismatch got $actual, expected $expected")
-                    return MyResult.HasError(PrinterError.LABEL_SIZE_MISMATCH)
+                    return PrintCommandResult.DeviceError(PrintStatusError.LABEL_SIZE_MISMATCH_ERROR)
                 }
             }
-            is MyResult.HasError -> {
-                Log.w(tag, "query result is invalid")
-                return MyResult.HasError(PrinterError.GENERIC_ERROR)
+            is QueryCommandResult.CommunicationError -> {
+                Log.w(tag, "query CommunicationError")
+                return PrintCommandResult.CommunicationError(queryResult.error)
+            }
+            is QueryCommandResult.DeviceError -> {
+                Log.w(tag, "query DeviceError")
+                PrintCommandResult.DeviceError(PrintStatusError.DEVICE_ERROR)
+            }
+            null -> {
+                Log.w(tag, "queryResult is null (weird?)")
+                return PrintCommandResult.CommunicationError(PrinterCommunicationError.GENERIC_ERROR)
             }
         }
 
         return withContext(Dispatchers.IO) {
+            // This mutex is very important
             printerDeviceConnectionMutex.withLock {
                 printerDeviceConnection.let {
                     if (it == null) {
-                        return@withContext MyResult.HasError(PrinterError.GENERIC_ERROR)
+                        return@withContext PrintCommandResult.CommunicationError(PrinterCommunicationError.CONNECTION_NULL_ERROR)
                     }
 
-                    val res = it.print(config)
-                    when (res) {
-                        is MyResult.NoError -> {
-                            return@withContext MyResult.NoError(PrinterPrintStatus.COMPLETED)
-                        }
-
-                        is MyResult.HasError -> {
-                            return@withContext res
-                        }
-                    }
+                    return@withContext it.print(config)
                 }
             }
         }
@@ -315,26 +314,27 @@ class PrinterDevicesManager {
      *
      * @return Result<PrinterQueryValue, PrinterError> indicating the result of the query request
      **/
-    private suspend fun mQuery(): MyResult<PrinterQueryValue, PrinterError> {
+    private suspend fun mQuery(): QueryCommandResult {
         val printerUsbStateValue = _printerState.value
 
         if (printerUsbStateValue.selectedPrinter == null) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return QueryCommandResult.CommunicationError(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
         val usbDevice = try {
             printerUsbStateValue.availablePrinters.getValue(printerUsbStateValue.selectedPrinter!!)
         } catch (_: NoSuchElementException) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return QueryCommandResult.CommunicationError(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
-        if(!usbManager.hasPermission(usbDevice)) return MyResult.HasError(PrinterError.PERMISSION_NOT_GRANTED)
+        if(!usbManager.hasPermission(usbDevice)) return QueryCommandResult.CommunicationError(PrinterCommunicationError.PERMISSION_ERROR)
 
         return withContext(Dispatchers.IO) {
+            // This mutex is very important
             printerDeviceConnectionMutex.withLock {
                  printerDeviceConnection.let {
                     if (it == null) {
-                        return@withContext MyResult.HasError(PrinterError.GENERIC_ERROR)
+                        return@withContext QueryCommandResult.CommunicationError(PrinterCommunicationError.CONNECTION_NULL_ERROR)
                     }
                     return@withContext it.query()
                 }
@@ -348,17 +348,17 @@ class PrinterDevicesManager {
      *
      * @return Result<Unit, PrinterError> indicating the result of the request permission and connection
      **/
-    suspend fun requestPermissionAndConnect(): MyResult<Unit, PrinterError> {
+    suspend fun requestPermissionAndConnect(): RequestPermissionAndConnectResult {
         val printerUsbStateValue = _printerState.value
 
         if (printerUsbStateValue.selectedPrinter == null) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return RequestPermissionAndConnectResult.Failure(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
         val usbDevice = try {
             printerUsbStateValue.availablePrinters.getValue(printerUsbStateValue.selectedPrinter!!)
         } catch (_: NoSuchElementException) {
-            return MyResult.HasError(PrinterError.NO_PRINTER_FOUND)
+            return RequestPermissionAndConnectResult.Failure(PrinterCommunicationError.NO_PRINTER_ERROR)
         }
 
         if (!usbManager.hasPermission(usbDevice)) {
@@ -382,10 +382,11 @@ class PrinterDevicesManager {
             }
 
             if (result == null || !result) {
-                return MyResult.HasError(PrinterError.PERMISSION_NOT_GRANTED)
+                return RequestPermissionAndConnectResult.Failure(PrinterCommunicationError.PERMISSION_ERROR)
             }
         }
 
+        // this mutex is very important
         printerDeviceConnectionMutex.withLock {
             // Gracefully close the previous connection
             printerDeviceConnection?.close()
@@ -393,11 +394,15 @@ class PrinterDevicesManager {
             // Create a new connection
             printerDeviceConnection = PrinterDeviceConnection(usbManager, usbDevice)
 
-            if (!printerDeviceConnection!!.open()) {
-                return@requestPermissionAndConnect MyResult.HasError(PrinterError.GENERIC_ERROR)
+            val res = printerDeviceConnection!!.open()
+            when(res) {
+                is OpenCommandResult.Success -> {
+                    return@requestPermissionAndConnect RequestPermissionAndConnectResult.Success
+                }
+                is OpenCommandResult.CommunicationError -> {
+                    return@requestPermissionAndConnect RequestPermissionAndConnectResult.Failure(res.error)
+                }
             }
         }
-
-        return MyResult.NoError(Unit)
     }
 }

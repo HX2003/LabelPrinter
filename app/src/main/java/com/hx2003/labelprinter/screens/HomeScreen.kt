@@ -170,7 +170,7 @@ fun HomeScreen(
                                 // Even so, the user can reject the request and get the permission later
                                 mainActivityViewModel.requestPermissionAndConnect()
                                 mainActivityViewModel.queryPrinter()
-                                mainActivityViewModel.clearPrintRequestResult()
+                                mainActivityViewModel.clearPrintStatusAndPrintRequestResult()
                                 onDone()
                             }
                         }

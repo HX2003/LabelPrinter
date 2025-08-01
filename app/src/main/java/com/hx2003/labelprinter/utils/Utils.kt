@@ -20,10 +20,16 @@ import androidx.core.graphics.get
 import androidx.core.graphics.set
 import com.hx2003.labelprinter.LabelSize
 
-sealed interface MyResult<out NoErrorT, out HasErrorT> {
-    data class NoError <out NoErrorT> (val data: NoErrorT) : MyResult<NoErrorT, Nothing>
-    data class HasError <out HasErrorT> (val error: HasErrorT): MyResult<Nothing, HasErrorT>
+/*sealed interface TwinResult<out Success, out Failure> {
+    data class Success <out Success> (val data: Success) : TwinResult<Success, Nothing>
+    data class Failure <out Failure> (val error: Failure): TwinResult<Nothing, Failure>
 }
+
+sealed interface TripleResult<out Success, out CommunicationError, out DeviceError> {
+    data class Success <out Success> (val data: Success) : TripleResult<Success, Nothing, Nothing>
+    data class CommunicationError <out CommunicationError> (val error: CommunicationError): TripleResult<Nothing, CommunicationError, Nothing>
+    data class DeviceError <out DeviceError> (val error: DeviceError): TripleResult<Nothing, DeviceError, Nothing>
+}*/
 
 fun transformBitmap(sourceBitmap: Bitmap?, dither: DitherOption, colorThreshold: Float, labelSize: LabelSize): Bitmap? {
     // Rescale the sourceBitmap,

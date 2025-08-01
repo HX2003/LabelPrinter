@@ -75,10 +75,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.hx2003.labelprinter.DitherOption
 import com.hx2003.labelprinter.LabelSize
 import com.hx2003.labelprinter.MainActivityViewModel
-import com.hx2003.labelprinter.PrinterError
-import com.hx2003.labelprinter.PrinterPrintStatus
+import com.hx2003.labelprinter.PrintCommandResult
+import com.hx2003.labelprinter.PrintStatusError
+import com.hx2003.labelprinter.PrinterCommunicationError
 import com.hx2003.labelprinter.R
-import com.hx2003.labelprinter.utils.MyResult
 import kotlinx.coroutines.delay
 import java.util.SortedMap
 import kotlin.math.ceil
@@ -99,48 +99,68 @@ fun PreviewScreen(
 
     val printResult = printerState.printResult
     when (printResult) {
-        is MyResult.NoError -> {
-            if(printResult.data == PrinterPrintStatus.COMPLETED) {
-                onDone()
-            }
+        is PrintCommandResult.Success -> {
+            onDone()
         }
-        is MyResult.HasError -> {
+        is PrintCommandResult.CommunicationError -> {
             when (printResult.error) {
-                PrinterError.NONE -> {}
-                PrinterError.NO_PRINTER_FOUND -> {
-                    warningDialogText = stringResource(R.string.warning_no_printer_found)
+                PrinterCommunicationError.NO_PRINTER_ERROR -> {
+                    warningDialogText = stringResource(R.string.no_printer_error_description)
                     warningDialogOpened = true
                 }
-
-                PrinterError.PERMISSION_NOT_GRANTED -> {
-                    warningDialogText = stringResource(R.string.warning_permission_not_granted)
+                PrinterCommunicationError.PERMISSION_ERROR -> {
+                    warningDialogText = stringResource(R.string.permission_error_description)
                     warningDialogOpened = true
                 }
-
-                PrinterError.GENERIC_ERROR -> {
-                    warningDialogText = stringResource(R.string.warning_printer_generic)
+                PrinterCommunicationError.CONNECTION_NULL_ERROR -> {
+                    warningDialogText = stringResource(R.string.connection_null_error_description)
                     warningDialogOpened = true
                 }
-                PrinterError.LABEL_SIZE_UNKNOWN -> {
-                    warningDialogText = stringResource(R.string.warning_label_size_unknown)
+                PrinterCommunicationError.USB_SETUP_ERROR -> {
+                    warningDialogText = stringResource(R.string.usb_setup_error_description)
                     warningDialogOpened = true
                 }
-                PrinterError.LABEL_SIZE_MISMATCH -> {
-                    warningDialogText = stringResource(R.string.warning_label_size_mismatch)
+                PrinterCommunicationError.TRANSFER_ERROR -> {
+                    warningDialogText = stringResource(R.string.transfer_error_description)
+                    warningDialogOpened = true
+                }
+                PrinterCommunicationError.PARSING_ERROR -> {
+                    warningDialogText = stringResource(R.string.parsing_error_description)
+                    warningDialogOpened = true
+                }
+                PrinterCommunicationError.GENERIC_ERROR -> {
+                    warningDialogText = stringResource(R.string.generic_error_description)
                     warningDialogOpened = true
                 }
             }
         }
+        is PrintCommandResult.DeviceError -> {
+            when (printResult.error) {
+                PrintStatusError.CONFIG_NULL_ERROR -> {
+                    warningDialogText = stringResource(R.string.config_null_error_description)
+                    warningDialogOpened = true
+                }
+                PrintStatusError.LABEL_SIZE_UNKNOWN_ERROR -> {
+                    warningDialogText = stringResource(R.string.label_size_unknown_error_description)
+                    warningDialogOpened = true
+                }
+                PrintStatusError.LABEL_SIZE_MISMATCH_ERROR -> {
+                    warningDialogText = stringResource(R.string.label_size_mismatch_error_description)
+                    warningDialogOpened = true
+                }
+                PrintStatusError.DEVICE_ERROR -> {
+                    warningDialogText = stringResource(R.string.device_error_description)
+                    warningDialogOpened = true
+                }
+            }
+        }
+        null -> {}
     }
 
-
-    val queryResult = printerState.queryResult
-    val labelSizeText = when (queryResult) {
-        is MyResult.NoError -> {
-            queryResult.data.labelSize.size.toString() + "mm"
-        }
-        is MyResult.HasError -> {
-            stringResource(R.string.unknown)
+    var labelSizeText = stringResource(R.string.unknown)
+    printConfigTransformed.let {
+        if (it != null) {
+            labelSizeText = it.labelSize.pixels.toString() + "mm"
         }
     }
 
@@ -306,12 +326,12 @@ fun PreviewScreen(
                 }
             }
 
-            // Displays any error messages from PrintRequestResult()
+            // Displays any error messages after print() has completed
             WarningAlertDialog (
                 text = warningDialogText,
                 opened = warningDialogOpened,
                 onDismissRequest = {
-                    mainActivityViewModel.clearPrintRequestResult()
+                    mainActivityViewModel.clearPrintStatusAndPrintRequestResult()
                 }
             )
         }
