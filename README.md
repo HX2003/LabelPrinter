@@ -1,5 +1,5 @@
 # LabelPrinter
-Use a USB cable to print to your Brother PT-D600 through this Android application.
+An Android application for USB printing with the Brother PT-D600 label printer.
 
 ## Features
 ### Image Manipulation
@@ -9,11 +9,11 @@ Use a USB cable to print to your Brother PT-D600 through this Android applicatio
 ### Printer Status Integration
 - Automatically detect the size of label
 - Multiple copies support (reducing paper usage)
-- Print error detection
+- Printing progress & error detection
 
 https://github.com/user-attachments/assets/0bfce49f-b533-46df-825e-272f097e0c08
 
 ## Technical details
-This project is built using the native [Jetpack Compose Framework](https://developer.android.com/compose) for Android with [Material Design 3](https://developer.android.com/develop/ui/compose/designsystems/material3) UI components.
+This project is built using the native [Jetpack Compose](https://developer.android.com/compose) framework for Android with [Material Design 3](https://developer.android.com/develop/ui/compose/designsystems/material3) UI components.
 
 ![Physical Labels](doc/PhysicalLabels.jpg)
