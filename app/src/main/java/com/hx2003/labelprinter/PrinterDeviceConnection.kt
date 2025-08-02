@@ -95,11 +95,12 @@ class PrinterDeviceConnection (
 
     private lateinit var usbReadRequest: UsbRequest
 
-    private val writeTimeout = 1250 // @TODO For very very long labels, this may be insufficient
+    private val writeTimeout = 500
+    private val writeRasterGraphicsTimeout = 2000 // Give extra time @TODO For very very long labels, this may be insufficient
     private val readTimeout = 500
 
     // @TODO For very very long labels, this may be insufficient
-    private val printTimeout = 7500
+    private val printTimeout = 10000
     private val printLastTimeout = 15000 // give extra time for the last label, since it needs to cut extra
     private val tag = "PrinterDeviceConnection"
 
@@ -489,7 +490,7 @@ class PrinterDeviceConnection (
             stream.write(0x0c)
         }
 
-        bulkWrite(stream.toByteArray())
+        bulkWrite(stream.toByteArray(), timeout = writeRasterGraphicsTimeout)
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
