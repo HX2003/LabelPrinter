@@ -119,7 +119,7 @@ class PrinterDevicesManager {
                     // when manually asking permission via requestPermission
                     //
                     // Do note that permission can also be granted when the user connects to the usb device,
-                    // explicitly calling requestPermission
+                    // without explicitly calling requestPermission
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                         Log.d(tag, "permission granted for usb device $device")
