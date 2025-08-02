@@ -62,6 +62,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)
-    //implementation(libs.android.image.cropper)
+    //implementation(libs.image.cropper)
     implementation(project(":cropper"))
 }

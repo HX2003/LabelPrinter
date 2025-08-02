@@ -42,7 +42,7 @@ androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecy
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinxSerializationCore" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 koin-androidx-compose = { module = "io.insert-koin:koin-androidx-compose", version.ref = "koin" }
-android-image-cropper = { module = "com.vanniktech:android-image-cropper", version.ref = "imageCropper" }
+image-cropper = { module = "com.vanniktech:android-image-cropper", version.ref = "imageCropper" }
 # For image cropper
 androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version = "1.9.2" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version = "1.7.0" }
