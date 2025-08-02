@@ -16,4 +16,4 @@ https://github.com/user-attachments/assets/0bfce49f-b533-46df-825e-272f097e0c08
 ## Technical details
 This project is built using the native [Jetpack Compose Framework](https://developer.android.com/compose) for Android with [Material Design 3](https://developer.android.com/develop/ui/compose/designsystems/material3) UI components.
 
-![Physical Labels](docs/PhysicalLabels.jpg)
+![Physical Labels](doc/PhysicalLabels.jpg)
