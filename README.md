@@ -13,7 +13,12 @@ An Android application for USB printing with the Brother PT-D600 label printer.
 
 https://github.com/user-attachments/assets/0bfce49f-b533-46df-825e-272f097e0c08
 
-## Technical details
+## Technical Details
 This project is built using the native [Jetpack Compose](https://developer.android.com/compose) framework for Android with [Material Design 3](https://developer.android.com/develop/ui/compose/designsystems/material3) UI components.
 
-![Physical Labels](doc/PhysicalLabels.jpg)
+### Architecture Overview
+![Architecture Overview](doc/labelprinterarchitecture.svg)
+
+### USB Protocol
+Documentation is readily available for similar models in the same family as the PT-D600 label printer. Thankfully, there are only minimal differences in the protocol between the models. To further verify this, the data packets sent using the official drivers were captured and analyzed using a Hex Editor like ImHex Editor (which I highly recommend).
+![USB Byte Stream analyzed using ImHex Editor](doc/labelprinterimhex.png "USB byte stream analyzed using ImHex Editor")
